@@ -1665,11 +1665,222 @@ const ThemeEngine = {
 };
 
 
+/* ────────────────────────────────────────────────────────────
+   10. HISTORY ENGINE — Panel lateral con repositorio GitHub
+       Consulta la API de GitHub para listar y cargar archivos
+       Excel (.xlsx, .xlsm, .xls) desde la carpeta REPORTES.
+──────────────────────────────────────────────────────────── */
+const HistoryEngine = {
+
+  /* ── Configuración ── */
+  GITHUB_API: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES',
+  VALID_EXTS: ['.xlsx', '.xlsm', '.xls'],
+
+  /* ── Estado interno ── */
+  _files:       [],   // Lista de archivos obtenidos de la API
+  _loadingFile: false, // Previene cargas simultáneas
+
+  /* ── Utilidades de DOM ── */
+  _el(id) { return document.getElementById(id); },
+
+  /* Muestra solo uno de los estados del panel */
+  _setState(state) {
+    const states = { loading: 'historyLoading', error: 'historyError',
+                     empty: 'historyEmpty',   list: 'historyList' };
+    Object.entries(states).forEach(([key, id]) => {
+      const el = this._el(id);
+      if (!el) return;
+      el.classList.toggle('d-none', key !== state);
+    });
+  },
+
+  /* Formatea tamaño de bytes */
+  _fmtSize(bytes) {
+    if (!bytes || bytes === 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  },
+
+  /* Obtiene la extensión del nombre de archivo */
+  _ext(name) {
+    const m = name.toLowerCase().match(/\.(xlsx|xlsm|xls)$/);
+    return m ? '.' + m[1] : '';
+  },
+
+  /* Clase de icono según extensión */
+  _iconClass(ext) {
+    const map = { '.xlsx': 'bi-file-earmark-spreadsheet history-file-ext-xlsx',
+                  '.xlsm': 'bi-file-earmark-spreadsheet history-file-ext-xlsm',
+                  '.xls':  'bi-file-earmark-spreadsheet history-file-ext-xls'  };
+    return map[ext] || 'bi-file-earmark';
+  },
+
+  /* Clase de badge según extensión */
+  _badgeClass(ext) {
+    const map = { '.xlsx': 'badge-xlsx', '.xlsm': 'badge-xlsm', '.xls': 'badge-xls' };
+    return map[ext] || '';
+  },
+
+  /* ── Consulta la API de GitHub ── */
+  async fetchFileList() {
+    this._setState('loading');
+
+    try {
+      const res = await fetch(this.GITHUB_API, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+      });
+
+      if (!res.ok) {
+        const msg = res.status === 404
+          ? 'Repositorio o carpeta no encontrada (404).'
+          : res.status === 403
+            ? 'Límite de peticiones a la API de GitHub excedido. Intenta en unos minutos.'
+            : `Error ${res.status}: ${res.statusText}`;
+        throw new Error(msg);
+      }
+
+      const items = await res.json();
+
+      /* Filtrar solo archivos con extensión Excel válida */
+      this._files = items.filter(item =>
+        item.type === 'file' && this.VALID_EXTS.includes(this._ext(item.name))
+      );
+
+      if (this._files.length === 0) {
+        this._setState('empty');
+        return;
+      }
+
+      this._renderList();
+      this._setState('list');
+
+    } catch (err) {
+      this._showError(err.message || 'Error desconocido al contactar la API de GitHub.');
+    }
+  },
+
+  /* ── Muestra el estado de error con mensaje ── */
+  _showError(msg) {
+    const msgEl = this._el('historyErrorMsg');
+    if (msgEl) msgEl.textContent = msg;
+    this._setState('error');
+  },
+
+  /* ── Renderiza la lista de archivos ── */
+  _renderList() {
+    const countEl = this._el('historyCount');
+    const listEl  = this._el('historyFileList');
+    if (!listEl) return;
+
+    if (countEl) countEl.textContent = `${this._files.length} archivo${this._files.length !== 1 ? 's' : ''} encontrado${this._files.length !== 1 ? 's' : ''}`;
+
+    listEl.innerHTML = '';
+    this._files.forEach((file, idx) => {
+      const ext  = this._ext(file.name);
+      const li   = document.createElement('li');
+      li.className = 'history-file-item';
+      li.dataset.idx = idx;
+
+      li.innerHTML = `
+        <i class="bi ${this._iconClass(ext)} history-file-icon"></i>
+        <div class="history-file-info">
+          <div class="history-file-name" title="${file.name}">${file.name}</div>
+          <div class="history-file-size">${this._fmtSize(file.size)}</div>
+        </div>
+        <span class="history-file-badge ${this._badgeClass(ext)}">${ext.replace('.','').toUpperCase()}</span>
+        <i class="bi bi-chevron-right history-file-arrow"></i>
+      `;
+
+      li.addEventListener('click', () => this._loadFile(file, li));
+      listEl.appendChild(li);
+    });
+  },
+
+  /* ── Descarga y procesa el archivo seleccionado ── */
+  async _loadFile(file, itemEl) {
+    if (this._loadingFile) return;
+    this._loadingFile = true;
+
+    /* UI: marcar item activo y mostrar spinner global */
+    itemEl.classList.add('loading');
+    const loadingOverlay = this._el('historyFileLoading');
+    const loadingName    = this._el('historyFileLoadingName');
+    if (loadingOverlay) loadingOverlay.classList.remove('d-none');
+    if (loadingName)    loadingName.textContent = file.name;
+
+    try {
+      /* Usa la download_url que provee la API de GitHub */
+      const url = file.download_url;
+      if (!url) throw new Error('El archivo no tiene URL de descarga disponible.');
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status}).`);
+
+      const buffer   = await res.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+
+      /* Guarda el nombre en DataStore y parsea con ExcelParser existente */
+      DataStore.fileName = file.name;
+      ExcelParser.parse(workbook);
+
+      /* Actualiza filtros, gráficos y dashboard (mismo flujo que carga local) */
+      FilterEngine.populate(DataStore.rawMain);
+      UIController.refresh();
+      UIController.showDashboard();
+      const footerEl = document.getElementById('footerFile');
+      if (footerEl) footerEl.textContent = file.name;
+      const titleEl = document.getElementById('reportTitle');
+      if (titleEl) titleEl.textContent = DataStore.reportTitle || file.name;
+
+      /* Cierra el Offcanvas tras cargar exitosamente */
+      const offcanvasEl = this._el('historyOffcanvas');
+      if (offcanvasEl) {
+        const bsOffcanvas = bootstrap.Offcanvas.getInstance(offcanvasEl);
+        if (bsOffcanvas) bsOffcanvas.hide();
+      }
+
+    } catch (err) {
+      /* Muestra el error dentro del panel para no interrumpir el dashboard */
+      this._showError(`Error al cargar "${file.name}": ${err.message}`);
+    } finally {
+      this._loadingFile = false;
+      itemEl.classList.remove('loading');
+      if (loadingOverlay) loadingOverlay.classList.add('d-none');
+    }
+  },
+
+  /* ── Inicialización: eventos y primera carga ── */
+  init() {
+    /* Al abrirse el Offcanvas, carga la lista si aún no hay archivos */
+    const offcanvasEl = document.getElementById('historyOffcanvas');
+    if (!offcanvasEl) return;
+
+    offcanvasEl.addEventListener('show.bs.offcanvas', () => {
+      /* Solo hace fetch si la lista está vacía o en estado de error/inicial */
+      const listEl = this._el('historyList');
+      const isListVisible = listEl && !listEl.classList.contains('d-none');
+      if (!isListVisible) this.fetchFileList();
+    });
+
+    /* Botón "Reintentar" en estado de error */
+    this._el('btnHistoryRetry')?.addEventListener('click', () => this.fetchFileList());
+
+    /* Botón refrescar dentro de la lista */
+    this._el('btnHistoryRefresh')?.addEventListener('click', () => {
+      this._files = [];
+      this.fetchFileList();
+    });
+  },
+};
+
+
 document.addEventListener('DOMContentLoaded', () => {
   ThemeEngine.init();
   UIController.init();
   GSheetsEngine.initModal();
   AbsenceEngine.initEvents();
+  HistoryEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:
