@@ -1995,3 +1995,433 @@ body {
   text-overflow: ellipsis;
   max-width: 230px;
 }
+
+/* ================================================================
+   AUTH ENGINE + CLOUD ENGINE — Modales, botones y banner
+================================================================ */
+
+/* ── Botón "Guardar en la Nube" (topbar) ── */
+.btn-cloud-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--info-dim);
+  color: var(--info);
+  border: 1px solid rgba(56,189,248,.35);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, box-shadow .2s;
+  white-space: nowrap;
+}
+
+.btn-cloud-save:hover:not(:disabled) {
+  background: rgba(56,189,248,.22);
+  border-color: var(--info);
+  box-shadow: 0 0 10px rgba(56,189,248,.2);
+}
+
+.btn-cloud-save:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .btn-cloud-save {
+  background: rgba(56,189,248,.1);
+  color: #0284c7;
+  border-color: rgba(2,132,199,.3);
+}
+
+[data-theme="light"] .btn-cloud-save:hover:not(:disabled) {
+  background: rgba(56,189,248,.2);
+  border-color: #0284c7;
+}
+
+/* ── Botón de configuración de token (topbar) ── */
+.btn-auth-config {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--bg-card2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  flex-shrink: 0;
+}
+
+.btn-auth-config:hover {
+  background: var(--bg-hover);
+  color: var(--gold);
+  border-color: rgba(240,180,41,.4);
+}
+
+[data-theme="light"] .btn-auth-config {
+  background: #f1f5f9;
+  border-color: rgba(0,0,0,.1);
+  color: #64748b;
+}
+
+[data-theme="light"] .btn-auth-config:hover {
+  background: #e2e8f0;
+  color: #b45309;
+  border-color: rgba(180,83,9,.35);
+}
+
+/* ── Botón de descarga directa dentro del ítem de historial ── */
+.history-dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 16px;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background .15s, color .15s;
+  position: relative;
+  z-index: 2;  /* encima del li para que no lo tape el evento click */
+}
+
+.history-dl-btn:hover {
+  background: var(--success-dim);
+  color: var(--success);
+}
+
+[data-theme="light"] .history-dl-btn:hover {
+  background: rgba(34,197,94,.12);
+  color: #15803d;
+}
+
+/* ── Banner de caducidad dentro del Offcanvas ── */
+.auth-expiry-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  background: rgba(251,146,60,.12);
+  border: 1px solid rgba(251,146,60,.35);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: #fb923c;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.auth-expiry-banner .bi {
+  font-size: 15px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.auth-expiry-banner strong { font-weight: 700; }
+
+.auth-expiry-link {
+  color: #fb923c;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  margin-left: 4px;
+}
+
+.auth-expiry-link:hover { color: #f97316; }
+
+[data-theme="light"] .auth-expiry-banner {
+  background: rgba(251,146,60,.09);
+  border-color: rgba(251,146,60,.3);
+}
+
+/* ── Modal base (Auth + Cloud) ── */
+.auth-modal-content {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow) !important;
+  overflow: hidden;
+}
+
+[data-theme="light"] .auth-modal-content {
+  background: #ffffff !important;
+  border-color: rgba(0,0,0,.1) !important;
+}
+
+.auth-modal-header {
+  background: var(--bg-card2);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+[data-theme="light"] .auth-modal-header {
+  background: #f1f5f9;
+  border-bottom-color: rgba(0,0,0,.07);
+}
+
+.auth-modal-icon {
+  font-size: 22px;
+  color: var(--gold);
+}
+
+.auth-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+[data-theme="light"] .auth-modal-title { color: #0f172a; }
+
+.auth-modal-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.auth-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background .15s, color .15s;
+}
+
+.auth-modal-close:hover { background: var(--bg-hover); color: var(--text-main); }
+
+[data-theme="light"] .auth-modal-close:hover { background: rgba(0,0,0,.07); color: #0f172a; }
+
+.auth-modal-body {
+  padding: 22px 22px 20px;
+  background: var(--bg-card);
+}
+
+[data-theme="light"] .auth-modal-body { background: #ffffff; }
+
+/* ── Estado del token ── */
+.auth-status {
+  display: flex;
+  align-items: center;
+  padding: 9px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.auth-status-none {
+  background: var(--neutral-dim);
+  color: var(--neutral);
+  border: 1px solid rgba(148,163,184,.2);
+}
+
+.auth-status-ok {
+  background: var(--success-dim);
+  color: var(--success);
+  border: 1px solid rgba(34,197,94,.2);
+}
+
+.auth-status-warn {
+  background: var(--warning-dim);
+  color: var(--warning);
+  border: 1px solid rgba(251,146,60,.3);
+}
+
+/* ── Etiqueta ── */
+.auth-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 7px;
+  margin-top: 12px;
+}
+
+[data-theme="light"] .auth-label { color: #475569; }
+
+/* ── Fila input + botón toggle ── */
+.auth-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.auth-input {
+  flex: 1;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-family: 'Outfit', monospace;
+  font-size: 12.5px;
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color .15s;
+}
+
+.auth-input:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+}
+
+[data-theme="light"] .auth-input {
+  background: #f8fafc;
+  border-color: rgba(0,0,0,.12);
+  color: #0f172a;
+}
+
+[data-theme="light"] .auth-input:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+.auth-toggle-btn {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 0 11px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.auth-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+[data-theme="light"] .auth-toggle-btn {
+  background: #f1f5f9;
+  border-color: rgba(0,0,0,.1);
+}
+
+/* ── Hint informativo ── */
+.auth-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 10px;
+  line-height: 1.55;
+  padding: 9px 12px;
+  background: var(--bg-card2);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--brand-blue);
+}
+
+[data-theme="light"] .auth-hint {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.auth-hint code {
+  background: rgba(255,255,255,.07);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--gold);
+}
+
+[data-theme="light"] .auth-hint code {
+  background: rgba(0,0,0,.06);
+  color: #b45309;
+}
+
+/* ── Error inline ── */
+.auth-modal-error {
+  background: var(--danger-dim);
+  border: 1px solid rgba(239,68,68,.3);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: 12px;
+  padding: 9px 12px;
+  margin-top: 10px;
+  line-height: 1.4;
+}
+
+/* ── Botones de acción del modal ── */
+.auth-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-auth-clear {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.btn-auth-clear:hover {
+  background: var(--danger-dim);
+  color: var(--danger);
+  border-color: rgba(239,68,68,.3);
+}
+
+.btn-auth-save {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 18px;
+  background: var(--brand-blue);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+}
+
+.btn-auth-save:hover {
+  background: var(--brand-blue-hov);
+  box-shadow: 0 0 10px rgba(37,99,235,.35);
+}
+
+.btn-cloud-confirm {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 18px;
+  background: var(--info-dim);
+  color: var(--info);
+  border: 1px solid rgba(56,189,248,.4);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+}
+
+.btn-cloud-confirm:hover:not(:disabled) {
+  background: rgba(56,189,248,.22);
+  box-shadow: 0 0 10px rgba(56,189,248,.25);
+}
+
+.btn-cloud-confirm:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .btn-cloud-confirm {
+  background: rgba(56,189,248,.1);
+  color: #0284c7;
+  border-color: rgba(2,132,199,.3);
+}
