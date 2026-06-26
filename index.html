@@ -67,6 +67,16 @@
       <i class="bi bi-clock-history me-2"></i>Historial
     </button>
 
+    <!-- Guardar en la Nube (visible solo cuando hay archivo cargado) -->
+    <button class="btn-cloud-save d-none" id="btnCloudSave" title="Guardar reporte en GitHub">
+      <i class="bi bi-cloud-arrow-up me-2"></i>Guardar en la Nube
+    </button>
+
+    <!-- Configuración de Token GitHub -->
+    <button class="btn-auth-config" id="btnAuthConfig" title="Configurar Token de GitHub">
+      <i class="bi bi-shield-lock" id="authConfigIcon"></i>
+    </button>
+
     <!-- Cargar archivo -->
     <label class="btn-upload" for="fileInput">
       <i class="bi bi-upload me-2"></i>Cargar Excel
@@ -94,6 +104,15 @@
   </div>
 
   <div class="offcanvas-body history-oc-body">
+
+    <!-- ── Banner de caducidad de token ── -->
+    <div id="authExpiryBanner" class="auth-expiry-banner d-none">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      <div>
+        <strong>Token GitHub</strong> — <span id="authExpiryDays"></span>.
+        <a href="#" id="btnExpiryOpenAuth" class="auth-expiry-link">Renovar ahora</a>
+      </div>
+    </div>
 
     <!-- Barra de estado de conexión -->
     <div class="history-repo-info">
@@ -130,13 +149,58 @@
       <div id="historyList" class="d-none">
         <div class="history-list-header">
           <span id="historyCount">0 archivos encontrados</span>
-          <button class="history-refresh-btn" id="btnHistoryRefresh" title="Actualizar lista">
-            <i class="bi bi-arrow-repeat"></i>
-          </button>
+          <div class="d-flex gap-2 align-items-center">
+            <button class="history-delete-all-btn" id="btnHistoryDeleteAll" title="Eliminar todos los archivos">
+              <i class="bi bi-trash3"></i>
+            </button>
+            <button class="history-refresh-btn" id="btnHistoryRefresh" title="Actualizar lista">
+              <i class="bi bi-arrow-repeat"></i>
+            </button>
+          </div>
         </div>
         <ul class="history-file-list" id="historyFileList"></ul>
       </div>
 
+    </div>
+
+    <!-- ── Mini-modal: confirmar eliminar UN archivo ── -->
+    <div id="historyDeleteModal" class="history-confirm-overlay d-none" role="dialog" aria-modal="true">
+      <div class="history-confirm-box">
+        <div class="history-confirm-icon danger">
+          <i class="bi bi-trash3-fill"></i>
+        </div>
+        <div class="history-confirm-title">¿Eliminar este reporte?</div>
+        <div class="history-confirm-msg">
+          Se eliminará permanentemente del repositorio:
+          <strong id="historyDeleteFileName" class="history-confirm-fname"></strong>
+        </div>
+        <div class="history-confirm-actions">
+          <button class="history-confirm-btn cancel" id="btnHistoryDeleteCancel">Cancelar</button>
+          <button class="history-confirm-btn danger" id="btnHistoryDeleteConfirm">
+            <i class="bi bi-trash3 me-1"></i>Eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Mini-modal: confirmar ELIMINAR TODOS ── -->
+    <div id="historyDeleteAllModal" class="history-confirm-overlay d-none" role="dialog" aria-modal="true">
+      <div class="history-confirm-box">
+        <div class="history-confirm-icon danger">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+        </div>
+        <div class="history-confirm-title">¿Eliminar todos los reportes?</div>
+        <div class="history-confirm-msg">
+          Se eliminarán permanentemente <strong id="historyDeleteAllCount">0</strong> archivos
+          de la carpeta <code>/REPORTES/</code> del repositorio. Esta acción no se puede deshacer.
+        </div>
+        <div class="history-confirm-actions">
+          <button class="history-confirm-btn cancel" id="btnHistoryDeleteAllCancel">Cancelar</button>
+          <button class="history-confirm-btn danger" id="btnHistoryDeleteAllConfirm">
+            <i class="bi bi-trash3 me-1"></i>Eliminar todo
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Estado: cargando archivo seleccionado -->
@@ -148,6 +212,117 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL — CONFIGURACIÓN DEL TOKEN GITHUB (AuthEngine)
+============================================================ -->
+<div class="modal fade" id="authModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-content auth-modal-content">
+
+      <div class="auth-modal-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-shield-lock auth-modal-icon"></i>
+          <div>
+            <div class="auth-modal-title">Configuración del Token GitHub</div>
+            <div class="auth-modal-sub">Personal Access Token (PAT) — expira en 1 año</div>
+          </div>
+        </div>
+        <button type="button" class="auth-modal-close" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="auth-modal-body">
+
+        <!-- Estado actual -->
+        <div id="authStatus" class="auth-status auth-status-none mb-3">
+          <i class="bi bi-shield-x me-1"></i>Sin token configurado
+        </div>
+
+        <!-- Input del token -->
+        <label class="auth-label">Personal Access Token</label>
+        <div class="auth-input-row">
+          <input type="password" id="authTokenInput" class="auth-input"
+                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                 autocomplete="off" spellcheck="false" />
+          <button class="auth-toggle-btn" id="btnAuthToggle" title="Mostrar / Ocultar">
+            <i class="bi bi-eye" id="authToggleIcon"></i>
+          </button>
+        </div>
+
+        <!-- Instrucciones -->
+        <div class="auth-hint">
+          <i class="bi bi-info-circle me-1"></i>
+          Genera tu PAT en <strong>GitHub → Settings → Developer settings → Personal access tokens</strong>.
+          Requiere permiso <code>repo</code> para poder subir archivos.
+        </div>
+
+        <!-- Error -->
+        <div id="authModalError" class="auth-modal-error d-none"></div>
+
+        <!-- Acciones -->
+        <div class="auth-modal-actions">
+          <button class="btn-auth-clear" id="btnAuthClear">
+            <i class="bi bi-trash me-1"></i>Borrar token
+          </button>
+          <button class="btn-auth-save" id="btnAuthSave">
+            <i class="bi bi-floppy me-1"></i>Guardar token
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL — GUARDAR EN LA NUBE (CloudEngine)
+============================================================ -->
+<div class="modal fade" id="cloudModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:440px">
+    <div class="modal-content auth-modal-content">
+
+      <div class="auth-modal-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-cloud-arrow-up auth-modal-icon" style="color:var(--info)"></i>
+          <div>
+            <div class="auth-modal-title">Guardar Reporte en GitHub</div>
+            <div class="auth-modal-sub">Se subirá a la carpeta /REPORTES/ del repositorio</div>
+          </div>
+        </div>
+        <button type="button" class="auth-modal-close" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="auth-modal-body">
+
+        <label class="auth-label">Nombre del archivo</label>
+        <input type="text" id="cloudFileNameInput" class="auth-input"
+               placeholder="reporte-asistencia.xlsx" spellcheck="false" />
+        <div class="auth-hint">
+          <i class="bi bi-info-circle me-1"></i>
+          Si el archivo ya existe en el repositorio, se <strong>actualizará</strong> automáticamente.
+        </div>
+
+        <!-- Error -->
+        <div id="cloudModalError" class="auth-modal-error d-none"></div>
+
+        <!-- Acciones -->
+        <div class="auth-modal-actions">
+          <button class="btn-auth-clear" data-bs-dismiss="modal">
+            <i class="bi bi-x me-1"></i>Cancelar
+          </button>
+          <button class="btn-cloud-confirm" id="btnCloudConfirm">
+            <i class="bi bi-cloud-arrow-up me-2"></i>Subir
+          </button>
+        </div>
+
+      </div>
+    </div>
   </div>
 </div>
 
