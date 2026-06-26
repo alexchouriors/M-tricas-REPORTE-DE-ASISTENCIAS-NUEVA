@@ -960,11 +960,13 @@ const UIController = {
       e.target.value = ''; // Permite recargar el mismo archivo
     });
 
-    // Toggle excluidos
-    document.getElementById('toggleExcluidos')?.addEventListener('change', e => {
-      DataStore.includeExcluidos = e.target.checked;
-      this.refresh();
-    });
+    // Toggle excluidos — botón oculto visualmente en topbar (ver index.html).
+    // Listener comentado para evitar referencias muertas; la lógica de
+    // DataStore.includeExcluidos / this.refresh() permanece intacta para uso futuro.
+    // document.getElementById('toggleExcluidos')?.addEventListener('change', e => {
+    //   DataStore.includeExcluidos = e.target.checked;
+    //   this.refresh();
+    // });
 
     // Filtros: actualizar en cambio
     ['filterGroup','filterEstado','filterCelula','filterServicio','filterNuevo']
@@ -1532,10 +1534,12 @@ const GSheetsEngine = {
     if (!modalEl) return;
     this.state.modalRef = new bootstrap.Modal(modalEl);
 
-    // Abrir modal desde topbar
-    document.getElementById('btnGsheets')?.addEventListener('click', () => {
-      this.state.modalRef.show();
-    });
+    // Abrir modal desde topbar — botón oculto visualmente (ver index.html).
+    // Listener comentado; this.state.modalRef.show() y toda la lógica de
+    // sincronización con Google Sheets permanecen intactas para uso futuro.
+    // document.getElementById('btnGsheets')?.addEventListener('click', () => {
+    //   this.state.modalRef.show();
+    // });
 
     // Abrir modal desde empty state
     document.getElementById('btnGsheetsEmpty')?.addEventListener('click', () => {

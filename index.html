@@ -39,20 +39,23 @@
 
   <div class="d-flex align-items-center gap-3 flex-wrap">
 
-    <!-- Toggle excluidos -->
+    <!-- Toggle excluidos (oculto visualmente — lógica intacta en app.js / DataStore.includeExcluidos) -->
+    <!--
     <div class="excl-toggle d-flex align-items-center gap-2">
       <span class="toggle-label">Incluir Excluidos</span>
       <div class="form-check form-switch mb-0">
         <input class="form-check-input toggle-excl" type="checkbox" id="toggleExcluidos" role="switch" />
       </div>
     </div>
+    -->
 
     <!-- Theme Toggle -->
     <button class="btn-theme" id="btnTheme" title="Cambiar tema">
       <i class="bi bi-sun-fill" id="themeIcon"></i>
     </button>
 
-    <!-- Google Sheets Sync -->
+    <!-- Google Sheets Sync (oculto visualmente en topbar — lógica de sincronización intacta en app.js) -->
+    <!--
     <button class="btn-gsheets" id="btnGsheets" title="Conectar Google Sheets">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" class="me-2">
         <path d="M19.5 3h-3V1.5A1.5 1.5 0 0 0 15 0H9a1.5 1.5 0 0 0-1.5 1.5V3h-3A1.5 1.5 0 0 0 3 4.5v18A1.5 1.5 0 0 0 4.5 24h15a1.5 1.5 0 0 0 1.5-1.5v-18A1.5 1.5 0 0 0 19.5 3ZM9 1.5h6V3H9Zm4.5 16.5H7.5V16.5h6Zm0-3H7.5V13.5h6Zm3 3H15V16.5h1.5Zm0-3H15V13.5h1.5Zm0-3H7.5V10.5h9Zm0-3H7.5V7.5h9Z"/>
@@ -60,6 +63,7 @@
       Google Sheets
       <span class="gsheet-status" id="gsheetStatus"></span>
     </button>
+    -->
 
     <!-- Historial de Reportes -->
     <button class="btn-history" id="btnHistory" title="Historial de Reportes"
