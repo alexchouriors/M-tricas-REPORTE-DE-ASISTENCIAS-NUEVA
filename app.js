@@ -25,7 +25,6 @@ const DataStore = {
   /* Metadatos del archivo */
   reportTitle:  '',
   fileName:     '',
-  rawBuffer:    null,   // ArrayBuffer del último archivo cargado localmente (para subida a GitHub)
 
   /* Estado de la UI */
   includeExcluidos: false,
@@ -1012,10 +1011,6 @@ const UIController = {
         this.showDashboard();
         document.getElementById('footerFile').textContent = file.name;
         document.getElementById('reportTitle').textContent = DataStore.reportTitle || file.name;
-
-        /* Guarda el buffer en DataStore y habilita el botón de subida */
-        DataStore.rawBuffer = e.target.result;
-        CloudEngine.enableUploadBtn(file.name);
       } catch (err) {
         console.error('Error al procesar el archivo:', err);
         alert(`Error al leer el archivo:\n${err.message}`);
@@ -1732,11 +1727,9 @@ const HistoryEngine = {
     this._setState('loading');
 
     try {
-      const headers = { 'Accept': 'application/vnd.github.v3+json' };
-      const token = AuthEngine.getToken();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(this.GITHUB_API, { headers });
+      const res = await fetch(this.GITHUB_API, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+      });
 
       if (!res.ok) {
         const msg = res.status === 404
@@ -1796,18 +1789,8 @@ const HistoryEngine = {
           <div class="history-file-size">${this._fmtSize(file.size)}</div>
         </div>
         <span class="history-file-badge ${this._badgeClass(ext)}">${ext.replace('.','').toUpperCase()}</span>
-        <a class="history-dl-btn"
-           href="${file.download_url}"
-           download="${file.name}"
-           title="Descargar archivo"
-           aria-label="Descargar ${file.name}">
-          <i class="bi bi-cloud-arrow-down"></i>
-        </a>
         <i class="bi bi-chevron-right history-file-arrow"></i>
       `;
-
-      /* Detiene propagación en el enlace de descarga para no disparar _loadFile */
-      li.querySelector('.history-dl-btn').addEventListener('click', e => e.stopPropagation());
 
       li.addEventListener('click', () => this._loadFile(file, li));
       listEl.appendChild(li);
@@ -1892,324 +1875,12 @@ const HistoryEngine = {
 };
 
 
-/* ────────────────────────────────────────────────────────────
-   11. AUTH ENGINE — Gestión del Personal Access Token (PAT)
-       Almacena el token en localStorage.
-       Alerta de caducidad a los 350 días (tokens duran 1 año).
-──────────────────────────────────────────────────────────── */
-const AuthEngine = {
-
-  STORAGE_KEY_TOKEN:    'iglesia_gh_token',
-  STORAGE_KEY_SAVED_AT: 'iglesia_gh_token_saved_at',
-  EXPIRY_WARN_DAYS:     350,   // Aviso cuando restan ~15 días para expirar
-
-  /* ── Getter / Setter ── */
-  getToken()  { return localStorage.getItem(this.STORAGE_KEY_TOKEN) || ''; },
-  getSavedAt(){ return parseInt(localStorage.getItem(this.STORAGE_KEY_SAVED_AT) || '0', 10); },
-
-  saveToken(token) {
-    localStorage.setItem(this.STORAGE_KEY_TOKEN,    token.trim());
-    localStorage.setItem(this.STORAGE_KEY_SAVED_AT, Date.now().toString());
-  },
-
-  clearToken() {
-    localStorage.removeItem(this.STORAGE_KEY_TOKEN);
-    localStorage.removeItem(this.STORAGE_KEY_SAVED_AT);
-  },
-
-  /* Días transcurridos desde que se guardó el token */
-  daysSinceSaved() {
-    const saved = this.getSavedAt();
-    if (!saved) return 0;
-    return Math.floor((Date.now() - saved) / (1000 * 60 * 60 * 24));
-  },
-
-  /* Comprueba si el token está próximo a caducar */
-  isNearExpiry() {
-    return this.getToken() && this.daysSinceSaved() >= this.EXPIRY_WARN_DAYS;
-  },
-
-  /* ── Alerta de caducidad en el banner del offcanvas ── */
-  checkExpiry() {
-    const banner = document.getElementById('authExpiryBanner');
-    if (!banner) return;
-    if (this.isNearExpiry()) {
-      const days = this.daysSinceSaved();
-      const remaining = 365 - days;
-      document.getElementById('authExpiryDays').textContent =
-        remaining <= 0 ? 'ya ha caducado' : `caduca en ~${remaining} día${remaining !== 1 ? 's' : ''}`;
-      banner.classList.remove('d-none');
-    } else {
-      banner.classList.add('d-none');
-    }
-  },
-
-  /* ── Inicializa el modal de configuración ── */
-  initModal() {
-    /* Poblar input al abrir */
-    const modalEl = document.getElementById('authModal');
-    if (!modalEl) return;
-    this._modalRef = new bootstrap.Modal(modalEl);
-
-    /* Botón topbar */
-    document.getElementById('btnAuthConfig')?.addEventListener('click', () => {
-      document.getElementById('authTokenInput').value = this.getToken();
-      this._updateModalStatus();
-      this._modalRef.show();
-    });
-
-    /* Guardar */
-    document.getElementById('btnAuthSave')?.addEventListener('click', () => {
-      const val = document.getElementById('authTokenInput')?.value.trim() || '';
-      if (!val) { this._setModalError('El token no puede estar vacío.'); return; }
-      this.saveToken(val);
-      this._setModalError('');
-      this._updateModalStatus();
-      this.checkExpiry();
-      /* Muestra confirmación y cierra */
-      this._toast('Token guardado correctamente ✓', 'success');
-      setTimeout(() => this._modalRef.hide(), 800);
-    });
-
-    /* Borrar */
-    document.getElementById('btnAuthClear')?.addEventListener('click', () => {
-      this.clearToken();
-      document.getElementById('authTokenInput').value = '';
-      this._updateModalStatus();
-      this.checkExpiry();
-      CloudEngine.disableUploadBtn();
-    });
-
-    /* Toggle visibilidad del campo */
-    document.getElementById('btnAuthToggle')?.addEventListener('click', () => {
-      const input = document.getElementById('authTokenInput');
-      const icon  = document.getElementById('authToggleIcon');
-      if (!input) return;
-      const isPass = input.type === 'password';
-      input.type = isPass ? 'text' : 'password';
-      icon.className = isPass ? 'bi bi-eye-slash' : 'bi bi-eye';
-    });
-
-    /* Comprobar caducidad en cada apertura */
-    modalEl.addEventListener('show.bs.modal', () => this._updateModalStatus());
-  },
-
-  _updateModalStatus() {
-    const token   = this.getToken();
-    const days    = this.daysSinceSaved();
-    const statusEl = document.getElementById('authStatus');
-    if (!statusEl) return;
-    if (!token) {
-      statusEl.className = 'auth-status auth-status-none';
-      statusEl.innerHTML = '<i class="bi bi-shield-x me-1"></i>Sin token configurado';
-    } else if (this.isNearExpiry()) {
-      statusEl.className = 'auth-status auth-status-warn';
-      statusEl.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Token guardado — caduca pronto (${days} días)`;
-    } else {
-      statusEl.className = 'auth-status auth-status-ok';
-      statusEl.innerHTML = `<i class="bi bi-shield-check me-1"></i>Token activo — ${days} día${days !== 1 ? 's' : ''} guardado`;
-    }
-  },
-
-  _setModalError(msg) {
-    const el = document.getElementById('authModalError');
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.toggle('d-none', !msg);
-  },
-
-  _toast(msg, type = 'info') {
-    const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-    const t = document.createElement('div');
-    t.className = `sync-toast ${type}`;
-    t.innerHTML = `<span>${icons[type]||'•'}</span><span>${msg}</span>`;
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3500);
-  },
-
-  init() {
-    this.initModal();
-    this.checkExpiry();
-
-    /* Enlace "Renovar ahora" dentro del banner de caducidad */
-    document.getElementById('btnExpiryOpenAuth')?.addEventListener('click', e => {
-      e.preventDefault();
-      document.getElementById('authTokenInput').value = this.getToken();
-      this._updateModalStatus();
-      this._modalRef?.show();
-    });
-  },
-};
-
-
-/* ────────────────────────────────────────────────────────────
-   12. CLOUD ENGINE — Subida de archivos a GitHub via API PUT
-──────────────────────────────────────────────────────────── */
-const CloudEngine = {
-
-  GITHUB_UPLOAD_BASE: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES/',
-
-  /* Convierte ArrayBuffer a string Base64 */
-  _bufferToBase64(buffer) {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
-  },
-
-  /* Habilita el botón de guardar en la nube con el nombre del archivo */
-  enableUploadBtn(fileName) {
-    const btn = document.getElementById('btnCloudSave');
-    if (!btn) return;
-    btn.classList.remove('d-none');
-    btn.disabled = false;
-    btn.dataset.fileName = fileName;
-    btn.title = `Guardar "${fileName}" en GitHub`;
-  },
-
-  disableUploadBtn() {
-    const btn = document.getElementById('btnCloudSave');
-    if (!btn) return;
-    btn.classList.add('d-none');
-    btn.disabled = true;
-    btn.dataset.fileName = '';
-  },
-
-  /* ── Modal de confirmación de nombre ── */
-  _openUploadModal(suggestedName) {
-    const input = document.getElementById('cloudFileNameInput');
-    if (input) input.value = suggestedName;
-    const modalEl = document.getElementById('cloudModal');
-    if (modalEl) {
-      this._cloudModalRef = this._cloudModalRef || new bootstrap.Modal(modalEl);
-      document.getElementById('cloudModalError')?.classList.add('d-none');
-      this._cloudModalRef.show();
-    }
-  },
-
-  /* ── Estado de loading en el botón del modal ── */
-  _setUploading(uploading) {
-    const btn = document.getElementById('btnCloudConfirm');
-    if (!btn) return;
-    btn.disabled = uploading;
-    btn.innerHTML = uploading
-      ? '<span class="spinner-border spinner-border-sm me-2"></span>Subiendo…'
-      : '<i class="bi bi-cloud-arrow-up me-2"></i>Subir';
-  },
-
-  _setModalError(msg) {
-    const el = document.getElementById('cloudModalError');
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.toggle('d-none', !msg);
-  },
-
-  /* ── Petición PUT a la API de GitHub ── */
-  async uploadFile(fileName) {
-    const token = AuthEngine.getToken();
-    if (!token) {
-      this._setModalError('No hay token configurado. Ve a Configuración → Token GitHub.');
-      return;
-    }
-
-    const buffer = DataStore.rawBuffer;
-    if (!buffer) {
-      this._setModalError('No hay archivo cargado en el dashboard.');
-      return;
-    }
-
-    /* Asegura extensión válida */
-    const safeName = fileName.trim() || DataStore.fileName;
-    if (!safeName) { this._setModalError('El nombre del archivo es obligatorio.'); return; }
-
-    this._setUploading(true);
-    this._setModalError('');
-
-    try {
-      const base64Content = this._bufferToBase64(buffer);
-      const apiUrl = this.GITHUB_UPLOAD_BASE + encodeURIComponent(safeName);
-
-      /* Primero comprobamos si el archivo ya existe (para obtener su SHA y hacer update) */
-      let sha = null;
-      const checkRes = await fetch(apiUrl, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/vnd.github.v3+json',
-        },
-      });
-      if (checkRes.ok) {
-        const existing = await checkRes.json();
-        sha = existing.sha;
-      }
-
-      const body = {
-        message: `Dashboard: ${sha ? 'Actualiza' : 'Sube'} reporte ${safeName}`,
-        content: base64Content,
-      };
-      if (sha) body.sha = sha;   // Requerido para actualizar un archivo existente
-
-      const putRes = await fetch(apiUrl, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept':        'application/vnd.github.v3+json',
-          'Content-Type':  'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!putRes.ok) {
-        const errData = await putRes.json().catch(() => ({}));
-        const detail  = errData.message || putRes.statusText;
-        if (putRes.status === 401) throw new Error('Token inválido o sin permisos (401). Verifica tu PAT.');
-        if (putRes.status === 422) throw new Error('Error de validación (422): ' + detail);
-        throw new Error(`Error ${putRes.status}: ${detail}`);
-      }
-
-      /* Éxito */
-      this._cloudModalRef?.hide();
-      AuthEngine._toast(`"${safeName}" subido exitosamente a GitHub ✓`, 'success');
-
-      /* Refresca la lista del Historial */
-      HistoryEngine._files = [];
-      const listEl = document.getElementById('historyList');
-      if (listEl) listEl.classList.add('d-none');
-      /* Si el offcanvas está abierto, re-fetcha; si no, en la próxima apertura lo hará */
-      const oc = document.getElementById('historyOffcanvas');
-      if (oc && oc.classList.contains('show')) HistoryEngine.fetchFileList();
-
-    } catch (err) {
-      this._setModalError(err.message);
-    } finally {
-      this._setUploading(false);
-    }
-  },
-
-  /* ── Inicializa eventos ── */
-  init() {
-    /* Botón topbar "Guardar en la Nube" → abre modal */
-    document.getElementById('btnCloudSave')?.addEventListener('click', () => {
-      this._openUploadModal(DataStore.fileName || 'reporte.xlsx');
-    });
-
-    /* Confirmar subida desde el modal */
-    document.getElementById('btnCloudConfirm')?.addEventListener('click', () => {
-      const name = document.getElementById('cloudFileNameInput')?.value.trim();
-      if (!name) { this._setModalError('Ingresa un nombre para el archivo.'); return; }
-      this.uploadFile(name);
-    });
-  },
-};
-
-
 document.addEventListener('DOMContentLoaded', () => {
   ThemeEngine.init();
   UIController.init();
   GSheetsEngine.initModal();
   AbsenceEngine.initEvents();
   HistoryEngine.init();
-  AuthEngine.init();
-  CloudEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:
