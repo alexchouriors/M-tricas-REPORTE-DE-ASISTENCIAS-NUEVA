@@ -1796,22 +1796,174 @@ const HistoryEngine = {
           <div class="history-file-size">${this._fmtSize(file.size)}</div>
         </div>
         <span class="history-file-badge ${this._badgeClass(ext)}">${ext.replace('.','').toUpperCase()}</span>
-        <a class="history-dl-btn"
-           href="${file.download_url}"
-           download="${file.name}"
-           title="Descargar archivo"
-           aria-label="Descargar ${file.name}">
-          <i class="bi bi-cloud-arrow-down"></i>
-        </a>
+        <div class="history-file-actions">
+          <a class="history-action-btn history-dl-btn"
+             href="${file.download_url}"
+             download="${file.name}"
+             title="Descargar archivo"
+             aria-label="Descargar ${file.name}">
+            <i class="bi bi-cloud-arrow-down"></i>
+          </a>
+          <button class="history-action-btn history-del-btn"
+                  title="Eliminar archivo del repositorio"
+                  aria-label="Eliminar ${file.name}">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </div>
         <i class="bi bi-chevron-right history-file-arrow"></i>
       `;
 
-      /* Detiene propagación en el enlace de descarga para no disparar _loadFile */
-      li.querySelector('.history-dl-btn').addEventListener('click', e => e.stopPropagation());
+      /* Detiene propagación en acciones secundarias */
+      li.querySelector('.history-dl-btn').addEventListener('click',  e => e.stopPropagation());
+      li.querySelector('.history-del-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        this._confirmDelete(file, li);
+      });
 
       li.addEventListener('click', () => this._loadFile(file, li));
       listEl.appendChild(li);
     });
+  },
+
+  /* ── Abre el mini-modal de confirmación de borrado ── */
+  _confirmDelete(file, itemEl) {
+    const modal = this._el('historyDeleteModal');
+    if (!modal) return;
+
+    /* Rellena el nombre en el modal */
+    const nameEl = this._el('historyDeleteFileName');
+    if (nameEl) nameEl.textContent = file.name;
+
+    /* Guarda referencia para el botón de confirmar */
+    this._pendingDelete = { file, itemEl };
+
+    /* Muestra el mini-modal posicionado dentro del offcanvas */
+    modal.classList.remove('d-none');
+    modal.classList.add('show');
+  },
+
+  /* Cierra el mini-modal de confirmación */
+  _closeDeleteModal() {
+    const modal = this._el('historyDeleteModal');
+    if (modal) { modal.classList.add('d-none'); modal.classList.remove('show'); }
+    this._pendingDelete = null;
+  },
+
+  /* ── Elimina un archivo del repositorio (API DELETE de GitHub) ── */
+  async _deleteFile(file, itemEl) {
+    const token = AuthEngine.getToken();
+    if (!token) {
+      this._closeDeleteModal();
+      this._showError('Se requiere un Token GitHub para eliminar archivos. Configúralo en el botón 🔒 de la barra superior.');
+      return;
+    }
+
+    /* Estado de carga en el botón de confirmar */
+    const confirmBtn = this._el('btnHistoryDeleteConfirm');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Eliminando…';
+    }
+
+    try {
+      const apiUrl = `https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES/${encodeURIComponent(file.name)}`;
+
+      /* El DELETE de GitHub requiere el SHA del archivo */
+      const sha = file.sha;
+      if (!sha) throw new Error('No se pudo obtener el identificador (SHA) del archivo.');
+
+      const res = await fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept':        'application/vnd.github.v3+json',
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify({
+          message: `Dashboard: Elimina reporte ${file.name}`,
+          sha,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 401) throw new Error('Token inválido o sin permisos (401).');
+        if (res.status === 404) throw new Error('Archivo no encontrado en el repositorio (404).');
+        throw new Error(`Error ${res.status}: ${err.message || res.statusText}`);
+      }
+
+      /* Animación de salida y eliminación del DOM */
+      itemEl.classList.add('removing');
+      await new Promise(r => setTimeout(r, 320));
+      itemEl.remove();
+
+      /* Actualiza lista interna */
+      this._files = this._files.filter(f => f.sha !== file.sha);
+
+      /* Actualiza el contador */
+      const countEl = this._el('historyCount');
+      if (countEl) countEl.textContent = `${this._files.length} archivo${this._files.length !== 1 ? 's' : ''} encontrado${this._files.length !== 1 ? 's' : ''}`;
+
+      /* Si ya no quedan archivos, muestra estado vacío */
+      if (this._files.length === 0) this._setState('empty');
+
+      AuthEngine._toast(`"${file.name}" eliminado del repositorio`, 'success');
+
+    } catch (err) {
+      AuthEngine._toast(`Error al eliminar: ${err.message}`, 'error');
+    } finally {
+      this._closeDeleteModal();
+    }
+  },
+
+  /* ── Elimina TODOS los archivos del repositorio ── */
+  async _deleteAll() {
+    const token = AuthEngine.getToken();
+    if (!token) {
+      this._showError('Se requiere un Token GitHub para eliminar archivos.');
+      return;
+    }
+
+    const modal = this._el('historyDeleteAllModal');
+    if (modal) { modal.classList.add('d-none'); modal.classList.remove('show'); }
+
+    /* Muestra overlay de progreso */
+    const loadingOverlay = this._el('historyFileLoading');
+    const loadingName    = this._el('historyFileLoadingName');
+    if (loadingOverlay) loadingOverlay.classList.remove('d-none');
+    if (loadingName)    loadingName.textContent = `Eliminando ${this._files.length} archivos…`;
+
+    let ok = 0, fail = 0;
+    const apiBase = 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES/';
+
+    for (const file of [...this._files]) {
+      try {
+        const res = await fetch(apiBase + encodeURIComponent(file.name), {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept':        'application/vnd.github.v3+json',
+            'Content-Type':  'application/json',
+          },
+          body: JSON.stringify({ message: `Dashboard: Limpieza masiva — elimina ${file.name}`, sha: file.sha }),
+        });
+        if (res.ok) { ok++; this._files = this._files.filter(f => f.sha !== file.sha); }
+        else fail++;
+      } catch { fail++; }
+      /* Actualiza texto del overlay */
+      if (loadingName) loadingName.textContent = `Eliminando… (${ok + fail}/${ok + fail + (this._files.length)})`;
+    }
+
+    if (loadingOverlay) loadingOverlay.classList.add('d-none');
+
+    if (fail === 0) {
+      this._setState('empty');
+      AuthEngine._toast(`${ok} archivo${ok !== 1 ? 's' : ''} eliminado${ok !== 1 ? 's' : ''} correctamente`, 'success');
+    } else {
+      this._files = [];
+      this.fetchFileList();
+      AuthEngine._toast(`${ok} eliminados, ${fail} fallaron. Revisa permisos del token.`, 'error');
+    }
   },
 
   /* ── Descarga y procesa el archivo seleccionado ── */
@@ -1874,7 +2026,6 @@ const HistoryEngine = {
     if (!offcanvasEl) return;
 
     offcanvasEl.addEventListener('show.bs.offcanvas', () => {
-      /* Solo hace fetch si la lista está vacía o en estado de error/inicial */
       const listEl = this._el('historyList');
       const isListVisible = listEl && !listEl.classList.contains('d-none');
       if (!isListVisible) this.fetchFileList();
@@ -1887,6 +2038,36 @@ const HistoryEngine = {
     this._el('btnHistoryRefresh')?.addEventListener('click', () => {
       this._files = [];
       this.fetchFileList();
+    });
+
+    /* ── Modal confirmación: eliminar UN archivo ── */
+    this._el('btnHistoryDeleteConfirm')?.addEventListener('click', () => {
+      if (!this._pendingDelete) return;
+      this._deleteFile(this._pendingDelete.file, this._pendingDelete.itemEl);
+    });
+
+    this._el('btnHistoryDeleteCancel')?.addEventListener('click', () => this._closeDeleteModal());
+
+    /* Clic en el backdrop del mini-modal también lo cierra */
+    this._el('historyDeleteModal')?.addEventListener('click', e => {
+      if (e.target === this._el('historyDeleteModal')) this._closeDeleteModal();
+    });
+
+    /* ── Botón "Eliminar todo" → abre modal de confirmación masiva ── */
+    this._el('btnHistoryDeleteAll')?.addEventListener('click', () => {
+      if (this._files.length === 0) return;
+      const countEl = this._el('historyDeleteAllCount');
+      if (countEl) countEl.textContent = this._files.length;
+      const modal = this._el('historyDeleteAllModal');
+      if (modal) { modal.classList.remove('d-none'); modal.classList.add('show'); }
+    });
+
+    /* ── Modal confirmación: eliminar TODOS ── */
+    this._el('btnHistoryDeleteAllConfirm')?.addEventListener('click', () => this._deleteAll());
+
+    this._el('btnHistoryDeleteAllCancel')?.addEventListener('click', () => {
+      const modal = this._el('historyDeleteAllModal');
+      if (modal) { modal.classList.add('d-none'); modal.classList.remove('show'); }
     });
   },
 };

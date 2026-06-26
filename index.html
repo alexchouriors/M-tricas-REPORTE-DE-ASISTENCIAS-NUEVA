@@ -149,13 +149,58 @@
       <div id="historyList" class="d-none">
         <div class="history-list-header">
           <span id="historyCount">0 archivos encontrados</span>
-          <button class="history-refresh-btn" id="btnHistoryRefresh" title="Actualizar lista">
-            <i class="bi bi-arrow-repeat"></i>
-          </button>
+          <div class="d-flex gap-2 align-items-center">
+            <button class="history-delete-all-btn" id="btnHistoryDeleteAll" title="Eliminar todos los archivos">
+              <i class="bi bi-trash3"></i>
+            </button>
+            <button class="history-refresh-btn" id="btnHistoryRefresh" title="Actualizar lista">
+              <i class="bi bi-arrow-repeat"></i>
+            </button>
+          </div>
         </div>
         <ul class="history-file-list" id="historyFileList"></ul>
       </div>
 
+    </div>
+
+    <!-- ── Mini-modal: confirmar eliminar UN archivo ── -->
+    <div id="historyDeleteModal" class="history-confirm-overlay d-none" role="dialog" aria-modal="true">
+      <div class="history-confirm-box">
+        <div class="history-confirm-icon danger">
+          <i class="bi bi-trash3-fill"></i>
+        </div>
+        <div class="history-confirm-title">¿Eliminar este reporte?</div>
+        <div class="history-confirm-msg">
+          Se eliminará permanentemente del repositorio:
+          <strong id="historyDeleteFileName" class="history-confirm-fname"></strong>
+        </div>
+        <div class="history-confirm-actions">
+          <button class="history-confirm-btn cancel" id="btnHistoryDeleteCancel">Cancelar</button>
+          <button class="history-confirm-btn danger" id="btnHistoryDeleteConfirm">
+            <i class="bi bi-trash3 me-1"></i>Eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Mini-modal: confirmar ELIMINAR TODOS ── -->
+    <div id="historyDeleteAllModal" class="history-confirm-overlay d-none" role="dialog" aria-modal="true">
+      <div class="history-confirm-box">
+        <div class="history-confirm-icon danger">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+        </div>
+        <div class="history-confirm-title">¿Eliminar todos los reportes?</div>
+        <div class="history-confirm-msg">
+          Se eliminarán permanentemente <strong id="historyDeleteAllCount">0</strong> archivos
+          de la carpeta <code>/REPORTES/</code> del repositorio. Esta acción no se puede deshacer.
+        </div>
+        <div class="history-confirm-actions">
+          <button class="history-confirm-btn cancel" id="btnHistoryDeleteAllCancel">Cancelar</button>
+          <button class="history-confirm-btn danger" id="btnHistoryDeleteAllConfirm">
+            <i class="bi bi-trash3 me-1"></i>Eliminar todo
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Estado: cargando archivo seleccionado -->
