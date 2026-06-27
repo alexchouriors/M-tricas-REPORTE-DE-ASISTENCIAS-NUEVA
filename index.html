@@ -81,25 +81,25 @@
     </label>
     <input type="file" id="fileInput" accept=".xlsx,.xlsm" hidden />
 
-    <!-- Historial de Reportes -->
-    <button class="btn-history" id="btnHistory" title="Historial de Reportes"
-            data-bs-toggle="offcanvas" data-bs-target="#historyOffcanvas" aria-controls="historyOffcanvas">
-      <i class="bi bi-clock-history me-2"></i>Historial
+    <!-- Menú lateral -->
+    <button class="btn-history" id="btnMenu" title="Menú"
+            data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu">
+      <i class="bi bi-list me-2"></i>Menú
     </button>
   </div>
 </header>
 
 <!-- ============================================================
-     OFFCANVAS — HISTORIAL DE REPORTES
+     OFFCANVAS — MENÚ LATERAL
 ============================================================ -->
-<div class="offcanvas offcanvas-end history-offcanvas" tabindex="-1" id="historyOffcanvas"
-     aria-labelledby="historyOffcanvasLabel">
+<div class="offcanvas offcanvas-end history-offcanvas" tabindex="-1" id="sidebarMenu"
+     aria-labelledby="sidebarMenuLabel">
   <div class="offcanvas-header history-oc-header">
     <div class="d-flex align-items-center gap-2">
-      <i class="bi bi-clock-history history-oc-icon"></i>
+      <i class="bi bi-list history-oc-icon"></i>
       <div>
-        <h5 class="offcanvas-title history-oc-title" id="historyOffcanvasLabel">Historial de Reportes</h5>
-        <div class="history-oc-sub">Repositorio GitHub · Carpeta REPORTES</div>
+        <h5 class="offcanvas-title history-oc-title" id="sidebarMenuLabel">Menú</h5>
+        <div class="history-oc-sub">Opciones del Dashboard</div>
       </div>
     </div>
     <button type="button" class="history-oc-close" data-bs-dismiss="offcanvas" aria-label="Cerrar">
@@ -109,68 +109,104 @@
 
   <div class="offcanvas-body history-oc-body">
 
-    <!-- ── Banner de caducidad de token ── -->
-    <div id="authExpiryBanner" class="auth-expiry-banner d-none">
-      <i class="bi bi-exclamation-triangle-fill me-2"></i>
-      <div>
-        <strong>Token GitHub</strong> — <span id="authExpiryDays"></span>.
-        <a href="#" id="btnExpiryOpenAuth" class="auth-expiry-link">Renovar ahora</a>
-      </div>
+    <div class="d-flex flex-column gap-2">
+
+      <!-- Guardar (inactivo - Fase beta) -->
+      <button type="button" class="btn btn-secondary disabled" style="pointer-events:none;" tabindex="-1" aria-disabled="true">
+        <i class="bi bi-save me-2"></i>Guardar
+        <span class="text-warning ms-1">(Fase beta)</span>
+      </button>
+
+      <!-- Eliminar (inactivo - Fase beta) -->
+      <button type="button" class="btn btn-secondary disabled" style="pointer-events:none;" tabindex="-1" aria-disabled="true">
+        <i class="bi bi-trash me-2"></i>Eliminar
+        <span class="text-warning ms-1">(Fase beta)</span>
+      </button>
+
+      <!-- Historial (activo) -->
+      <button type="button" class="btn btn-primary" id="btnAbrirHistorial"
+              data-bs-dismiss="offcanvas"
+              data-bs-toggle="modal" data-bs-target="#modalHistorial">
+        <i class="bi bi-clock-history me-2"></i>Historial
+      </button>
+
     </div>
 
-    <!-- Barra de estado de conexión -->
-    <div class="history-repo-info">
-      <i class="bi bi-github me-2"></i>
-      <span class="history-repo-name">alexchouriors / M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA</span>
-    </div>
+  </div>
+</div>
 
-    <!-- Estado de carga / error / lista -->
-    <div id="historyState">
+<!-- ============================================================
+     MODAL — HISTORIAL DE REPORTES
+============================================================ -->
+<div class="modal fade" id="modalHistorial" tabindex="-1" aria-labelledby="modalHistorialLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
 
-      <!-- Estado: cargando lista -->
-      <div id="historyLoading" class="history-loading">
-        <div class="spinner-border history-spinner" role="status"></div>
-        <span class="history-loading-text">Consultando repositorio…</span>
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalHistorialLabel">
+          <i class="bi bi-clock-history me-2"></i>Historial de Reportes
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
 
-      <!-- Estado: error -->
-      <div id="historyError" class="history-error d-none">
-        <i class="bi bi-wifi-off history-error-icon"></i>
-        <div class="history-error-title">No se pudo conectar</div>
-        <div class="history-error-msg" id="historyErrorMsg">Error al acceder al repositorio.</div>
-        <button class="btn-history-retry" id="btnHistoryRetry">
-          <i class="bi bi-arrow-repeat me-1"></i>Reintentar
-        </button>
-      </div>
+      <div class="modal-body">
 
-      <!-- Estado: vacío -->
-      <div id="historyEmpty" class="history-empty d-none">
-        <i class="bi bi-folder2-open history-empty-icon"></i>
-        <div class="history-empty-text">No se encontraron archivos Excel en la carpeta REPORTES.</div>
-      </div>
+        <!-- Banner de caducidad de token -->
+        <div id="authExpiryBanner" class="auth-expiry-banner d-none mb-3">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>
+          <div>
+            <strong>Token GitHub</strong> — <span id="authExpiryDays"></span>.
+            <a href="#" id="btnExpiryOpenAuth" class="auth-expiry-link">Renovar ahora</a>
+          </div>
+        </div>
 
-      <!-- Lista de archivos -->
-      <div id="historyList" class="d-none">
-        <div class="history-list-header">
-          <span id="historyCount">0 archivos encontrados</span>
-          <button class="history-refresh-btn" id="btnHistoryRefresh" title="Actualizar lista">
-            <i class="bi bi-arrow-repeat"></i>
+        <!-- Bloque informativo -->
+        <div class="alert alert-info d-flex flex-column gap-1 small mb-3">
+          <div><i class="bi bi-folder2-open me-2"></i><strong>Directorio:</strong> Carpeta <code>/REPORTES</code></div>
+          <div>
+            <i class="bi bi-github me-2"></i><strong>Repositorio:</strong>
+            <a href="https://github.com/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA" target="_blank" rel="noopener noreferrer">
+              alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA
+            </a>
+          </div>
+        </div>
+
+        <!-- Estado: cargando lista -->
+        <div id="historyLoading" class="history-loading">
+          <div class="spinner-border history-spinner" role="status"></div>
+          <span class="history-loading-text">Consultando repositorio…</span>
+        </div>
+
+        <!-- Estado: error -->
+        <div id="historyError" class="history-error d-none">
+          <i class="bi bi-wifi-off history-error-icon"></i>
+          <div class="history-error-title">No se pudo conectar</div>
+          <div class="history-error-msg" id="historyErrorMsg">Error al acceder al repositorio.</div>
+          <button class="btn-history-retry" id="btnHistoryRetry">
+            <i class="bi bi-arrow-repeat me-1"></i>Reintentar
           </button>
         </div>
-        <ul class="history-file-list" id="historyFileList"></ul>
+
+        <!-- Estado: vacío -->
+        <div id="historyEmpty" class="history-empty d-none">
+          <i class="bi bi-folder2-open history-empty-icon"></i>
+          <div class="history-empty-text">No se encontraron archivos Excel en la carpeta REPORTES.</div>
+        </div>
+
+        <!-- Estado: cargando archivo seleccionado -->
+        <div id="historyFileLoading" class="history-file-loading d-none">
+          <div class="spinner-border history-file-spinner" role="status"></div>
+          <div>
+            <div class="history-file-loading-title">Descargando archivo…</div>
+            <div class="history-file-loading-name" id="historyFileLoadingName"></div>
+          </div>
+        </div>
+
+        <!-- Contenedor de archivos (inyectado vía JS) -->
+        <div id="listaReportesContainer" class="list-group"></div>
+
       </div>
-
     </div>
-
-    <!-- Estado: cargando archivo seleccionado -->
-    <div id="historyFileLoading" class="history-file-loading d-none">
-      <div class="spinner-border history-file-spinner" role="status"></div>
-      <div>
-        <div class="history-file-loading-title">Descargando archivo…</div>
-        <div class="history-file-loading-name" id="historyFileLoadingName"></div>
-      </div>
-    </div>
-
   </div>
 </div>
 

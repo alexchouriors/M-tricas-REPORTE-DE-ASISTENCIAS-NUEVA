@@ -1694,13 +1694,15 @@ const HistoryEngine = {
 
   /* Muestra solo uno de los estados del panel */
   _setState(state) {
-    const states = { loading: 'historyLoading', error: 'historyError',
-                     empty: 'historyEmpty',   list: 'historyList' };
+    const states = { loading: 'historyLoading', error: 'historyError', empty: 'historyEmpty' };
     Object.entries(states).forEach(([key, id]) => {
       const el = this._el(id);
       if (!el) return;
       el.classList.toggle('d-none', key !== state);
     });
+
+    const listEl = this._el('listaReportesContainer');
+    if (listEl) listEl.classList.toggle('d-none', state !== 'list');
   },
 
   /* Formatea tamaño de bytes */
@@ -1780,41 +1782,35 @@ const HistoryEngine = {
 
   /* ── Renderiza la lista de archivos ── */
   _renderList() {
-    const countEl = this._el('historyCount');
-    const listEl  = this._el('historyFileList');
+    const listEl = this._el('listaReportesContainer');
     if (!listEl) return;
-
-    if (countEl) countEl.textContent = `${this._files.length} archivo${this._files.length !== 1 ? 's' : ''} encontrado${this._files.length !== 1 ? 's' : ''}`;
 
     listEl.innerHTML = '';
     this._files.forEach((file, idx) => {
       const ext  = this._ext(file.name);
-      const li   = document.createElement('li');
-      li.className = 'history-file-item';
-      li.dataset.idx = idx;
+      const item = document.createElement('div');
+      item.className = 'list-group-item d-flex align-items-center justify-content-between flex-wrap gap-2';
+      item.dataset.idx = idx;
 
-      li.innerHTML = `
-        <i class="bi ${this._iconClass(ext)} history-file-icon"></i>
-        <div class="history-file-info">
-          <div class="history-file-name" title="${file.name}">${file.name}</div>
-          <div class="history-file-size">${this._fmtSize(file.size)}</div>
+      item.innerHTML = `
+        <div class="d-flex align-items-center gap-2 text-truncate">
+          <i class="bi ${this._iconClass(ext)} text-success fs-5"></i>
+          <span class="text-truncate" title="${file.name}">${file.name}</span>
         </div>
-        <span class="history-file-badge ${this._badgeClass(ext)}">${ext.replace('.','').toUpperCase()}</span>
-        <a class="history-dl-btn"
-           href="${file.download_url}"
-           download="${file.name}"
-           title="Descargar archivo"
-           aria-label="Descargar ${file.name}">
-          <i class="bi bi-cloud-arrow-down"></i>
-        </a>
-        <i class="bi bi-chevron-right history-file-arrow"></i>
+        <div class="d-flex align-items-center gap-2 ms-auto">
+          <button type="button" class="btn btn-sm btn-outline-primary btn-cargar-reporte" data-idx="${idx}">
+            <i class="bi bi-cloud-arrow-down me-1"></i>Cargar al Dashboard
+          </button>
+          <a class="btn btn-sm btn-outline-success" href="${file.download_url}" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-download me-1"></i>Descargar
+          </a>
+        </div>
       `;
 
-      /* Detiene propagación en el enlace de descarga para no disparar _loadFile */
-      li.querySelector('.history-dl-btn').addEventListener('click', e => e.stopPropagation());
+      /* Botón "Cargar al Dashboard": usa la lógica existente y cierra el modal */
+      item.querySelector('.btn-cargar-reporte').addEventListener('click', () => this._loadFile(file, item));
 
-      li.addEventListener('click', () => this._loadFile(file, li));
-      listEl.appendChild(li);
+      listEl.appendChild(item);
     });
   },
 
@@ -1854,11 +1850,11 @@ const HistoryEngine = {
       const titleEl = document.getElementById('reportTitle');
       if (titleEl) titleEl.textContent = DataStore.reportTitle || file.name;
 
-      /* Cierra el Offcanvas tras cargar exitosamente */
-      const offcanvasEl = this._el('historyOffcanvas');
-      if (offcanvasEl) {
-        const bsOffcanvas = bootstrap.Offcanvas.getInstance(offcanvasEl);
-        if (bsOffcanvas) bsOffcanvas.hide();
+      /* Cierra el Modal tras cargar exitosamente */
+      const modalEl = this._el('modalHistorial');
+      if (modalEl) {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
       }
 
     } catch (err) {
@@ -1873,25 +1869,19 @@ const HistoryEngine = {
 
   /* ── Inicialización: eventos y primera carga ── */
   init() {
-    /* Al abrirse el Offcanvas, carga la lista si aún no hay archivos */
-    const offcanvasEl = document.getElementById('historyOffcanvas');
-    if (!offcanvasEl) return;
+    /* Al abrirse el Modal, carga la lista si aún no hay archivos */
+    const modalEl = document.getElementById('modalHistorial');
+    if (!modalEl) return;
 
-    offcanvasEl.addEventListener('show.bs.offcanvas', () => {
+    modalEl.addEventListener('show.bs.modal', () => {
       /* Solo hace fetch si la lista está vacía o en estado de error/inicial */
-      const listEl = this._el('historyList');
-      const isListVisible = listEl && !listEl.classList.contains('d-none');
-      if (!isListVisible) this.fetchFileList();
+      const listEl = this._el('listaReportesContainer');
+      const hasItems = listEl && listEl.children.length > 0;
+      if (!hasItems) this.fetchFileList();
     });
 
     /* Botón "Reintentar" en estado de error */
     this._el('btnHistoryRetry')?.addEventListener('click', () => this.fetchFileList());
-
-    /* Botón refrescar dentro de la lista */
-    this._el('btnHistoryRefresh')?.addEventListener('click', () => {
-      this._files = [];
-      this.fetchFileList();
-    });
   },
 };
 
@@ -2035,9 +2025,17 @@ const AuthEngine = {
     this.initModal();
     this.checkExpiry();
 
-    /* Enlace "Renovar ahora" dentro del banner de caducidad */
+    /* Enlace "Renovar ahora" dentro del banner de caducidad (ahora vive en #modalHistorial) */
     document.getElementById('btnExpiryOpenAuth')?.addEventListener('click', e => {
       e.preventDefault();
+
+      /* Cierra el modal de Historial antes de abrir el de configuración del token */
+      const historialEl = document.getElementById('modalHistorial');
+      if (historialEl) {
+        const bsHistorial = bootstrap.Modal.getInstance(historialEl);
+        if (bsHistorial) bsHistorial.hide();
+      }
+
       document.getElementById('authTokenInput').value = this.getToken();
       this._updateModalStatus();
       this._modalRef?.show();
@@ -2176,11 +2174,11 @@ const CloudEngine = {
 
       /* Refresca la lista del Historial */
       HistoryEngine._files = [];
-      const listEl = document.getElementById('historyList');
-      if (listEl) listEl.classList.add('d-none');
-      /* Si el offcanvas está abierto, re-fetcha; si no, en la próxima apertura lo hará */
-      const oc = document.getElementById('historyOffcanvas');
-      if (oc && oc.classList.contains('show')) HistoryEngine.fetchFileList();
+      const listEl = document.getElementById('listaReportesContainer');
+      if (listEl) listEl.innerHTML = '';
+      /* Si el modal de Historial está abierto, re-fetcha; si no, en la próxima apertura lo hará */
+      const modalHistorialEl = document.getElementById('modalHistorial');
+      if (modalHistorialEl && modalHistorialEl.classList.contains('show')) HistoryEngine.fetchFileList();
 
     } catch (err) {
       this._setModalError(err.message);
