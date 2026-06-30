@@ -75,6 +75,16 @@ const ExcelParser = {
     return String(v).trim();
   },
 
+  /* Devuelve true si el valor de celda debe considerarse "vacío"
+     (null, undefined, string vacío, 0 numérico, booleano false, etc.)
+     Necesario porque SheetJS puede devolver 0 o false en celdas en blanco
+     dependiendo de cómo fue generado el Excel. */
+  isEmpty(v) {
+    if (v === null || v === undefined) return true;
+    const s = String(v).trim();
+    return s === '' || s === '0' || s === 'false';
+  },
+
   /* Convierte número de serie Excel a fecha legible */
   excelDate(v) {
     if (!v) return '';
@@ -110,14 +120,15 @@ const ExcelParser = {
 
       /* Detectar encabezado de grupo ministerial:
          - La fila contiene texto en col0
+         - col1 (Nombre) DEBE estar vacía — si hay nombre, es fila de persona
+         - col2 (Célula) y col3 (Servicio) deben estar vacías (sin datos de asistencia)
          - NO empieza con número ni con "N°" ni con "TOTAL"
-         - Col1 está vacía (no es una fila de datos con nombre)
-         - Col2 está vacía o vacía de datos de asistencia
       */
       const isGroupHeader = (
         col0.length > 3 &&
-        col2 === '' &&
-        col3 === '' &&
+        col1 === '' &&
+        this.isEmpty(row[2]) &&
+        this.isEmpty(row[3]) &&
         !/^\d/.test(col0) &&
         !col0.startsWith('N°') &&
         !col0.startsWith('TOTAL') &&
@@ -127,7 +138,7 @@ const ExcelParser = {
       );
 
       if (isGroupHeader) {
-        currentGroup = col0;
+        currentGroup = col0.trim();
         continue;
       }
 
@@ -170,7 +181,7 @@ const ExcelParser = {
           celula:          celVal2  || 'NO',    // valor real del campo Célula (C)
           servicio:        serVal3  || 'NO',    // valor real del campo Servicio (D)
           estado:          col4     || '',      // valor real del campo Estado (E)
-          grupo:           currentGroup,
+          grupo:           currentGroup.trim(),
           esNuevo:         esNuevo,
           esNuevoCelula:   esNuevoCelula,       // NUEVO en célula (Estado=NUEVO)
           esNuevoServicio: esNuevoServicio,     // NUEVO en servicio (Célula=NUEVO)
@@ -199,8 +210,14 @@ const ExcelParser = {
       const col4 = this.str(row[4]);
 
       // Detectar encabezado de grupo
-      if (col0.length > 3 && col2 === '' && !/^\d/.test(col0) && !col0.startsWith('TOTAL')) {
-        currentGroup = col0;
+      if (
+        col0.length > 3 &&
+        col1 === '' &&
+        this.isEmpty(row[2]) &&
+        !/^\d/.test(col0) &&
+        !col0.startsWith('TOTAL')
+      ) {
+        currentGroup = col0.trim();
         continue;
       }
 
@@ -213,7 +230,7 @@ const ExcelParser = {
           celula:   col2.toUpperCase() || 'NO',
           servicio: col3.toUpperCase() || 'NO',
           estado:   col4 || '',
-          grupo:    currentGroup,
+          grupo:    currentGroup.trim(),
           esNuevo:  false,
           fecha:    this.excelDate(fechaRaw || row[5]),
           fuente:   'excluidos',
@@ -239,8 +256,14 @@ const ExcelParser = {
       const col4 = this.str(row[4]);
 
       // Encabezado grupo
-      if (col0.length > 3 && !/^\d/.test(col0) && !col0.startsWith('TOTAL')) {
-        currentGroup = col0;
+      if (
+        col0.length > 3 &&
+        col1 === '' &&
+        this.isEmpty(row[2]) &&
+        !/^\d/.test(col0) &&
+        !col0.startsWith('TOTAL')
+      ) {
+        currentGroup = col0.trim();
         continue;
       }
 
@@ -252,7 +275,7 @@ const ExcelParser = {
           celula:   col2.toUpperCase() || 'NO',
           servicio: col3.toUpperCase() || 'NO',
           estado:   col4 || '',
-          grupo:    currentGroup,
+          grupo:    currentGroup.trim(),
           esNuevo:  true,
           fecha:    this.excelDate(row[5]),
           fuente:   'nuevo_ex',
