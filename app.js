@@ -1905,6 +1905,22 @@ const HistoryEngine = {
 
     /* Botón "Reintentar" en estado de error */
     this._el('btnHistoryRetry')?.addEventListener('click', () => this.fetchFileList());
+
+    /* Botón ícono recargar dentro del info-box del modal */
+    this._el('btnRecargarRepo')?.addEventListener('click', () => {
+      const btn  = this._el('btnRecargarRepo');
+      const icon = this._el('reloadRepoIcon');
+      if (btn) btn.disabled = true;
+      if (btn)  btn.classList.add('spinning');
+      // reinicia animación CSS
+      if (icon) { icon.style.animation = 'none'; void icon.offsetWidth; icon.style.animation = ''; }
+      this._files = [];
+      const listEl = this._el('listaReportesContainer');
+      if (listEl) listEl.innerHTML = '';
+      this.fetchFileList().finally(() => {
+        if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+      });
+    });
   },
 };
 
@@ -2227,6 +2243,152 @@ const CloudEngine = {
 };
 
 
+/* ────────────────────────────────────────────────────────────
+   13. DELETE ENGINE — Eliminación de archivos en GitHub via API DELETE
+       Lista los archivos de /REPORTES y los elimina usando su SHA.
+──────────────────────────────────────────────────────────── */
+const DeleteEngine = {
+
+  GITHUB_API: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES',
+  VALID_EXTS: ['.xlsx', '.xlsm', '.xls'],
+
+  _files: [],
+
+  _el(id) { return document.getElementById(id); },
+
+  _ext(name) {
+    const m = name.toLowerCase().match(/\.(xlsx|xlsm|xls)$/);
+    return m ? '.' + m[1] : '';
+  },
+
+  _setState(state) {
+    const map = { loading: 'deleteLoading', error: 'deleteError', empty: 'deleteEmpty' };
+    Object.entries(map).forEach(([key, id]) => {
+      const el = this._el(id);
+      if (el) el.classList.toggle('d-none', key !== state);
+    });
+    const listEl = this._el('listaEliminarContainer');
+    if (listEl) listEl.classList.toggle('d-none', state !== 'list');
+  },
+
+  _showError(msg) {
+    const msgEl = this._el('deleteErrorMsg');
+    if (msgEl) msgEl.textContent = msg;
+    this._setState('error');
+  },
+
+  async fetchFileList() {
+    this._setState('loading');
+    try {
+      const headers = { 'Accept': 'application/vnd.github.v3+json' };
+      const token = AuthEngine.getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(this.GITHUB_API, { headers });
+      if (!res.ok) {
+        const msg = res.status === 404
+          ? 'Repositorio o carpeta no encontrada (404).'
+          : res.status === 403
+            ? 'Límite de peticiones a la API de GitHub excedido. Intenta en unos minutos.'
+            : `Error ${res.status}: ${res.statusText}`;
+        throw new Error(msg);
+      }
+
+      const items = await res.json();
+      this._files = items.filter(i => i.type === 'file' && this.VALID_EXTS.includes(this._ext(i.name)));
+
+      if (this._files.length === 0) { this._setState('empty'); return; }
+      this._renderList();
+      this._setState('list');
+    } catch (err) {
+      this._showError(err.message || 'Error desconocido al contactar la API de GitHub.');
+    }
+  },
+
+  _renderList() {
+    const listEl = this._el('listaEliminarContainer');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    this._files.forEach((file, idx) => {
+      const item = document.createElement('div');
+      item.className = 'list-group-item d-flex align-items-center justify-content-between flex-wrap gap-2';
+      item.dataset.idx = idx;
+      item.innerHTML = `
+        <div class="d-flex align-items-center gap-2 text-truncate">
+          <i class="bi bi-file-earmark-spreadsheet text-success fs-5"></i>
+          <span class="text-truncate" title="${file.name}">${file.name}</span>
+        </div>
+        <button type="button" class="btn-delete-file" data-idx="${idx}" title="Eliminar ${file.name}">
+          <i class="bi bi-trash-fill"></i>Eliminar
+        </button>`;
+      item.querySelector('.btn-delete-file').addEventListener('click', () => this._confirmDelete(file, item));
+      listEl.appendChild(item);
+    });
+  },
+
+  async _confirmDelete(file, itemEl) {
+    const confirmed = window.confirm(`¿Estás seguro que quieres eliminar "${file.name}"?\n\nEsta acción es irreversible.`);
+    if (!confirmed) return;
+
+    const token = AuthEngine.getToken();
+    if (!token) { alert('No hay token de GitHub configurado. Ve a Configuración → Token GitHub.'); return; }
+
+    const btn = itemEl.querySelector('.btn-delete-file');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+
+    try {
+      const apiUrl = `${this.GITHUB_API}/${encodeURIComponent(file.name)}`;
+      const res = await fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept':        'application/vnd.github.v3+json',
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify({ message: `Dashboard: Elimina reporte ${file.name}`, sha: file.sha }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const detail  = errData.message || res.statusText;
+        if (res.status === 401) throw new Error('Token inválido o sin permisos (401).');
+        if (res.status === 422) throw new Error('Error de validación (422): ' + detail);
+        throw new Error(`Error ${res.status}: ${detail}`);
+      }
+
+      itemEl.style.transition = 'opacity .3s';
+      itemEl.style.opacity = '0';
+      setTimeout(() => itemEl.remove(), 300);
+      this._files = this._files.filter(f => f.sha !== file.sha);
+      if (this._files.length === 0) this._setState('empty');
+
+      AuthEngine._toast(`"${file.name}" eliminado correctamente ✓`, 'success');
+
+      /* Invalida caché del HistoryEngine */
+      HistoryEngine._files = [];
+      const histListEl = document.getElementById('listaReportesContainer');
+      if (histListEl) histListEl.innerHTML = '';
+
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-trash-fill"></i>Eliminar'; }
+      alert(`No se pudo eliminar "${file.name}":\n${err.message}`);
+    }
+  },
+
+  init() {
+    const modalEl = document.getElementById('modalEliminar');
+    if (!modalEl) return;
+    modalEl.addEventListener('show.bs.modal', () => {
+      this._files = [];
+      const listEl = this._el('listaEliminarContainer');
+      if (listEl) listEl.innerHTML = '';
+      this.fetchFileList();
+    });
+    this._el('btnDeleteRetry')?.addEventListener('click', () => this.fetchFileList());
+  },
+};
+
+
 document.addEventListener('DOMContentLoaded', () => {
   ThemeEngine.init();
   UIController.init();
@@ -2235,6 +2397,7 @@ document.addEventListener('DOMContentLoaded', () => {
   HistoryEngine.init();
   AuthEngine.init();
   CloudEngine.init();
+  DeleteEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:

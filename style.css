@@ -2425,3 +2425,339 @@ body {
   color: #0284c7;
   border-color: rgba(2,132,199,.3);
 }
+
+/* ================================================================
+   DASH MODAL — Ventanas emergentes con tema oscuro/claro
+   Aplica a #modalHistorial y #modalEliminar (clases .dash-modal-*)
+================================================================ */
+
+/* Fondo del modal-content */
+.modal-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-main);
+}
+
+/* Header */
+.dash-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 12px 12px 0 0;
+}
+
+.dash-modal-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Botón cerrar custom */
+.dash-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 1;
+}
+
+.dash-modal-close:hover {
+  background: rgba(239,68,68,.15);
+  border-color: rgba(239,68,68,.4);
+  color: #ef4444;
+}
+
+/* Body */
+.dash-modal-body {
+  background: var(--bg-card);
+  padding: 20px 22px 22px;
+  border-radius: 0 0 12px 12px;
+  color: var(--text-main);
+}
+
+/* ── Info box (reemplaza alert-info de Bootstrap) ── */
+.dash-info-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(56,189,248,.08);
+  border: 1px solid rgba(56,189,248,.25);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.dash-info-box--danger {
+  background: rgba(239,68,68,.08);
+  border-color: rgba(239,68,68,.25);
+  color: var(--text-muted);
+}
+
+.dash-info-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dash-info-content a {
+  color: #38bdf8;
+  text-decoration: none;
+  word-break: break-all;
+}
+.dash-info-content a:hover { text-decoration: underline; }
+
+.dash-info-content strong { color: var(--text-main); }
+
+.dash-info-content code {
+  background: rgba(255,255,255,.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #38bdf8;
+}
+
+/* ── Botón recargar (solo icono) dentro del info-box ── */
+.btn-reload-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(56,189,248,.10);
+  border: 1px solid rgba(56,189,248,.30);
+  color: #38bdf8;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.btn-reload-icon:hover {
+  background: rgba(56,189,248,.22);
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56,189,248,.25);
+}
+
+.btn-reload-icon:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* Animación de giro cuando recarga */
+.btn-reload-icon.spinning i {
+  display: inline-block;
+  animation: spin-repo .7s linear;
+}
+
+@keyframes spin-repo {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Botón Eliminar (menú lateral) ── */
+.btn-menu-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(220,38,38,.85);
+  color: #fff;
+  border: 1px solid rgba(239,68,68,.6);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, box-shadow .2s;
+  white-space: nowrap;
+}
+
+.btn-menu-delete:hover {
+  background: rgba(220,38,38,1);
+  border-color: #f87171;
+  box-shadow: 0 0 12px rgba(239,68,68,.35);
+  color: #fff;
+}
+
+.btn-menu-delete .badge-beta-del {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  background: rgba(255,255,255,.18);
+  color: #fecaca;
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+/* ── Botón papelera en lista de archivos del modal Eliminar ── */
+.btn-delete-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: rgba(239,68,68,.12);
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,.35);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+  white-space: nowrap;
+  font-family: 'Outfit', sans-serif;
+}
+
+.btn-delete-file:hover {
+  background: rgba(239,68,68,.25);
+  border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239,68,68,.2);
+}
+
+.btn-delete-file:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* ── list-group items dentro de los modales (Historial y Eliminar) ── */
+.dash-modal-body .list-group-item {
+  background: var(--bg-card2);
+  border-color: var(--border);
+  color: var(--text-main);
+  transition: background .15s;
+}
+
+.dash-modal-body .list-group-item:hover {
+  background: var(--bg-hover);
+}
+
+/* ================================================================
+   LIGHT THEME — Overrides para los nuevos componentes
+================================================================ */
+
+[data-theme="light"] .modal-content {
+  background: #ffffff;
+  border-color: rgba(0,0,0,.1);
+  color: #0f172a;
+}
+
+[data-theme="light"] .dash-modal-header {
+  background: #ffffff;
+  border-bottom-color: rgba(0,0,0,.08);
+}
+
+[data-theme="light"] .dash-modal-title {
+  color: #0f172a;
+}
+
+[data-theme="light"] .dash-modal-close {
+  background: #f1f5f9;
+  border-color: rgba(0,0,0,.1);
+  color: #475569;
+}
+
+[data-theme="light"] .dash-modal-close:hover {
+  background: rgba(239,68,68,.1);
+  border-color: rgba(239,68,68,.3);
+  color: #dc2626;
+}
+
+[data-theme="light"] .dash-modal-body {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+[data-theme="light"] .dash-info-box {
+  background: rgba(2,132,199,.07);
+  border-color: rgba(2,132,199,.22);
+  color: #1e293b;
+}
+
+[data-theme="light"] .dash-info-box--danger {
+  background: rgba(220,38,38,.07);
+  border-color: rgba(220,38,38,.22);
+  color: #1e293b;
+}
+
+[data-theme="light"] .dash-info-content a {
+  color: #0284c7;
+}
+
+[data-theme="light"] .dash-info-content strong {
+  color: #0f172a;
+}
+
+[data-theme="light"] .dash-info-content code {
+  background: rgba(0,0,0,.06);
+  color: #0284c7;
+}
+
+[data-theme="light"] .btn-reload-icon {
+  background: rgba(2,132,199,.1);
+  border-color: rgba(2,132,199,.3);
+  color: #0284c7;
+}
+
+[data-theme="light"] .btn-reload-icon:hover {
+  background: rgba(2,132,199,.2);
+  border-color: #0284c7;
+  box-shadow: 0 0 8px rgba(2,132,199,.2);
+}
+
+[data-theme="light"] .btn-menu-delete {
+  background: rgba(185,28,28,.9);
+  border-color: rgba(239,68,68,.5);
+}
+
+[data-theme="light"] .btn-menu-delete:hover {
+  background: #b91c1c;
+  border-color: #dc2626;
+}
+
+[data-theme="light"] .btn-delete-file {
+  background: rgba(220,38,38,.08);
+  color: #dc2626;
+  border-color: rgba(220,38,38,.3);
+}
+
+[data-theme="light"] .btn-delete-file:hover {
+  background: rgba(220,38,38,.16);
+  border-color: #dc2626;
+}
+
+[data-theme="light"] .dash-modal-body .list-group-item {
+  background: #f8fafc;
+  border-color: rgba(0,0,0,.07);
+  color: #0f172a;
+}
+
+[data-theme="light"] .dash-modal-body .list-group-item:hover {
+  background: #f1f5f9;
+}
