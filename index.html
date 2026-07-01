@@ -3,15 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- PWA -->
-  <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#161b24" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Métricas" />
-  <link rel="apple-touch-icon" href="icon-192.png" />
   <title>Dashboard de Asistencia — Iglesia</title>
 
   <!-- Google Fonts: Bebas Neue (display) + Outfit (body) -->
@@ -126,10 +117,12 @@
         <span class="text-warning ms-1">(Fase beta)</span>
       </button>
 
-      <!-- Eliminar (inactivo - Fase beta) -->
-      <button type="button" class="btn btn-secondary disabled" style="pointer-events:none;" tabindex="-1" aria-disabled="true">
-        <i class="bi bi-trash me-2"></i>Eliminar
-        <span class="text-warning ms-1">(Fase beta)</span>
+      <!-- Eliminar (activo) -->
+      <button type="button" class="btn-menu-delete" id="btnAbrirEliminar"
+              data-bs-dismiss="offcanvas"
+              data-bs-toggle="modal" data-bs-target="#modalEliminar">
+        <i class="bi bi-trash-fill"></i>Eliminar
+        <span class="badge-beta-del">BETA</span>
       </button>
 
       <!-- Historial (activo) -->
@@ -151,14 +144,16 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
 
-      <div class="modal-header">
-        <h5 class="modal-title" id="modalHistorialLabel">
+      <div class="modal-header dash-modal-header">
+        <h5 class="modal-title dash-modal-title" id="modalHistorialLabel">
           <i class="bi bi-clock-history me-2"></i>Historial de Reportes
         </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        <button type="button" class="dash-modal-close" data-bs-dismiss="modal" aria-label="Cerrar">
+          <i class="bi bi-x-lg"></i>
+        </button>
       </div>
 
-      <div class="modal-body">
+      <div class="modal-body dash-modal-body">
 
         <!-- Banner de caducidad de token -->
         <div id="authExpiryBanner" class="auth-expiry-banner d-none mb-3">
@@ -169,15 +164,20 @@
           </div>
         </div>
 
-        <!-- Bloque informativo -->
-        <div class="alert alert-info d-flex flex-column gap-1 small mb-3">
-          <div><i class="bi bi-folder2-open me-2"></i><strong>Directorio:</strong> Carpeta <code>/REPORTES</code></div>
-          <div>
-            <i class="bi bi-github me-2"></i><strong>Repositorio:</strong>
-            <a href="https://github.com/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA" target="_blank" rel="noopener noreferrer">
-              alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA
-            </a>
+        <!-- Bloque informativo con botón recargar integrado a la derecha -->
+        <div class="dash-info-box mb-3">
+          <div class="dash-info-content">
+            <div><i class="bi bi-folder2-open me-2"></i><strong>Directorio:</strong> Carpeta <code>/REPORTES</code></div>
+            <div>
+              <i class="bi bi-github me-2"></i><strong>Repositorio:</strong>
+              <a href="https://github.com/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA" target="_blank" rel="noopener noreferrer">
+                alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA
+              </a>
+            </div>
           </div>
+          <button type="button" class="btn-reload-icon" id="btnRecargarRepo" title="Recargar repositorio">
+            <i class="bi bi-arrow-repeat" id="reloadRepoIcon"></i>
+          </button>
         </div>
 
         <!-- Estado: cargando lista -->
@@ -950,22 +950,66 @@
   <span id="footerFile">Sin archivo</span>
 </footer>
 
+<!-- ============================================================
+     MODAL — ELIMINAR REPORTES (DeleteEngine)
+============================================================ -->
+<div class="modal fade" id="modalEliminar" tabindex="-1" aria-labelledby="modalEliminarLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header dash-modal-header">
+        <h5 class="modal-title dash-modal-title" id="modalEliminarLabel">
+          <i class="bi bi-trash-fill me-2" style="color:#ef4444"></i>Eliminar Reportes
+        </h5>
+        <button type="button" class="dash-modal-close" data-bs-dismiss="modal" aria-label="Cerrar">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body dash-modal-body">
+
+        <!-- Aviso de precaución -->
+        <div class="dash-info-box dash-info-box--danger mb-3">
+          <div class="dash-info-content">
+            <div><i class="bi bi-exclamation-triangle-fill me-2"></i><strong>¡Atención!</strong> Esta acción es <strong>irreversible</strong>.</div>
+            <div>Al eliminar un archivo del repositorio no podrá recuperarse salvo desde el historial de commits de GitHub.</div>
+          </div>
+        </div>
+
+        <!-- Estado: cargando lista -->
+        <div id="deleteLoading" class="history-loading">
+          <div class="spinner-border history-spinner" role="status"></div>
+          <span class="history-loading-text">Consultando repositorio…</span>
+        </div>
+
+        <!-- Estado: error -->
+        <div id="deleteError" class="history-error d-none">
+          <i class="bi bi-wifi-off history-error-icon"></i>
+          <div class="history-error-title">No se pudo conectar</div>
+          <div class="history-error-msg" id="deleteErrorMsg">Error al acceder al repositorio.</div>
+          <button class="btn-history-retry" id="btnDeleteRetry">
+            <i class="bi bi-arrow-repeat me-1"></i>Reintentar
+          </button>
+        </div>
+
+        <!-- Estado: vacío -->
+        <div id="deleteEmpty" class="history-empty d-none">
+          <i class="bi bi-folder2-open history-empty-icon"></i>
+          <div class="history-empty-text">No se encontraron archivos Excel en la carpeta REPORTES.</div>
+        </div>
+
+        <!-- Contenedor de archivos (inyectado vía JS) -->
+        <div id="listaEliminarContainer" class="list-group d-none"></div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Bootstrap JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 
 <!-- App JS -->
 <script src="app.js"></script>
-
-<!-- PWA — Registro del Service Worker -->
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('./sw.js')
-        .then(reg => console.log('[SW] Registrado correctamente. Scope:', reg.scope))
-        .catch(err => console.error('[SW] Error al registrar:', err));
-    });
-  }
-</script>
 </body>
 </html>
