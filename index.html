@@ -3,6 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="CONFIG APP MOVIL/manifest.json" />
+  <meta name="theme-color" content="#161b24" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="REPORTES" />
+  <link rel="apple-touch-icon" href="CONFIG APP MOVIL/icon-192.png" />
   <title>Dashboard de Asistencia — Iglesia</title>
 
   <!-- Google Fonts: Bebas Neue (display) + Outfit (body) -->
@@ -1011,5 +1020,19 @@
 
 <!-- App JS -->
 <script src="app.js"></script>
+
+<!-- PWA — Registro del Service Worker
+     El scope '/' permite que el SW controle toda la app aunque
+     el archivo físico esté en la subcarpeta "CONFIG APP MOVIL/". -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('CONFIG APP MOVIL/sw.js', { scope: '/' })
+        .then(reg => console.log('[SW] Registrado. Scope:', reg.scope))
+        .catch(err => console.error('[SW] Error al registrar:', err));
+    });
+  }
+</script>
 </body>
 </html>
