@@ -1698,6 +1698,47 @@ const ThemeEngine = {
 
 
 /* ────────────────────────────────────────────────────────────
+   9.5 AUDIT ENGINE — Capa de seguridad/auditoría compartida
+       Pide el nombre de quien ejecuta una acción sensible
+       (Eliminar / Cargar / Descargar) y notifica por Telegram.
+──────────────────────────────────────────────────────────── */
+const AuditEngine = {
+
+  /**
+   * Solicita el nombre del responsable mediante prompt().
+   * Devuelve el nombre (trim) si es válido, o null si se canceló
+   * o se dejó en blanco — en cuyo caso el llamador debe abortar
+   * la acción con `return`.
+   *
+   * @param {string} actionLabel - Texto descriptivo de la acción (para el prompt)
+   * @returns {string|null}
+   */
+  requestUser(actionLabel = 'esta acción') {
+    const input = window.prompt(`Por seguridad, ingresa tu nombre para registrar "${actionLabel}":`);
+    if (input === null) return null;          // Cancelado
+    const name = input.trim();
+    if (name === '') return null;             // En blanco
+    return name;
+  },
+
+  /**
+   * Dispara la notificación de Telegram sin bloquear la UI.
+   * Los errores se registran en consola pero nunca interrumpen
+   * el flujo de la acción principal.
+   */
+  notify({ action, user, fileName, extra }) {
+    if (typeof TelegramEngine === 'undefined') {
+      console.warn('[AuditEngine] TelegramEngine no está disponible; se omite la notificación.');
+      return;
+    }
+    /* Fire-and-forget: no se usa await para no bloquear la interfaz */
+    TelegramEngine.notify({ action, user, fileName, extra })
+      .catch(err => console.error('[AuditEngine] Error al notificar por Telegram:', err));
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
    10. HISTORY ENGINE — Panel lateral con repositorio GitHub
        Consulta la API de GitHub para listar y cargar archivos
        Excel (.xlsx, .xlsm, .xls) desde la carpeta REPORTES.
@@ -1830,8 +1871,26 @@ const HistoryEngine = {
         </div>
       `;
 
-      /* Botón "Cargar al Dashboard": usa la lógica existente y cierra el modal */
-      item.querySelector('.btn-cargar-reporte').addEventListener('click', () => this._loadFile(file, item));
+      /* Botón "Cargar al Dashboard": valida usuario (auditoría) antes de ejecutar la lógica existente */
+      item.querySelector('.btn-cargar-reporte').addEventListener('click', () => {
+        const user = AuditEngine.requestUser(`cargar "${file.name}" al Dashboard`);
+        if (!user) return; // Cancelado o nombre en blanco: se aborta la acción
+
+        AuditEngine.notify({ action: 'cargar', user, fileName: file.name });
+        this._loadFile(file, item);
+      });
+
+      /* Botón "Descargar": valida usuario (auditoría) antes de permitir la descarga */
+      const btnDescargar = item.querySelector('a.btn-outline-success');
+      if (btnDescargar) {
+        btnDescargar.addEventListener('click', (e) => {
+          const user = AuditEngine.requestUser(`descargar "${file.name}"`);
+          if (!user) { e.preventDefault(); return; } // Cancelado o nombre en blanco: se aborta la acción
+
+          AuditEngine.notify({ action: 'descargar', user, fileName: file.name });
+          /* No se hace preventDefault: el <a href> sigue su curso normal de descarga */
+        });
+      }
 
       listEl.appendChild(item);
     });
@@ -2330,6 +2389,10 @@ const DeleteEngine = {
     const confirmed = window.confirm(`¿Estás seguro que quieres eliminar "${file.name}"?\n\nEsta acción es irreversible.`);
     if (!confirmed) return;
 
+    /* Capa de seguridad/auditoría: exige nombre del responsable antes de eliminar */
+    const user = AuditEngine.requestUser(`eliminar "${file.name}"`);
+    if (!user) return; // Cancelado o nombre en blanco: se aborta la acción
+
     const token = AuthEngine.getToken();
     if (!token) { alert('No hay token de GitHub configurado. Ve a Configuración → Token GitHub.'); return; }
 
@@ -2363,6 +2426,9 @@ const DeleteEngine = {
       if (this._files.length === 0) this._setState('empty');
 
       AuthEngine._toast(`"${file.name}" eliminado correctamente ✓`, 'success');
+
+      /* Notificación de auditoría por Telegram (no bloquea la interfaz) */
+      AuditEngine.notify({ action: 'eliminar', user, fileName: file.name });
 
       /* Invalida caché del HistoryEngine */
       HistoryEngine._files = [];
