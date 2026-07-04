@@ -1041,6 +1041,7 @@ const UIController = {
         /* Guarda el buffer en DataStore y habilita el botón de subida */
         DataStore.rawBuffer = e.target.result;
         CloudEngine.enableUploadBtn(file.name);
+        SaveEngine.enable(file.name);
       } catch (err) {
         console.error('Error al procesar el archivo:', err);
         alert(`Error al leer el archivo:\n${err.message}`);
@@ -2303,6 +2304,168 @@ const CloudEngine = {
 
 
 /* ────────────────────────────────────────────────────────────
+   12.5 SAVE ENGINE — Botón "Guardar" del menú lateral (offcanvas)
+       Se habilita solo cuando hay un Excel cargado localmente.
+       Flujo: pide nuevo nombre → pide responsable → sube a
+       GitHub (REPORTES/) → notifica por Telegram.
+──────────────────────────────────────────────────────────── */
+const SaveEngine = {
+
+  GITHUB_UPLOAD_BASE: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES/',
+
+  _el(id) { return document.getElementById(id); },
+
+  /* ── Habilita el botón al cargar un Excel local ── */
+  enable(fileName) {
+    const btn  = this._el('btnMenuGuardar');
+    const icon = this._el('btnMenuGuardarIcon');
+    const text = this._el('btnMenuGuardarText');
+    if (!btn) return;
+
+    btn.disabled = false;
+    btn.classList.add('is-enabled');
+    btn.dataset.fileName = fileName || '';
+    btn.title = `Guardar "${fileName || ''}" en GitHub`;
+
+    if (icon) icon.className = 'bi bi-save2-fill';
+    if (text) text.innerHTML = 'Guardar <span class="badge-beta-guardar ms-1">(beta)</span>';
+  },
+
+  /* ── Vuelve al estado bloqueado por defecto ── */
+  disable() {
+    const btn  = this._el('btnMenuGuardar');
+    const icon = this._el('btnMenuGuardarIcon');
+    const text = this._el('btnMenuGuardarText');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.classList.remove('is-enabled');
+    btn.dataset.fileName = '';
+    btn.title = '';
+
+    if (icon) icon.className = 'bi bi-lock-fill';
+    if (text) text.textContent = 'Guardar';
+  },
+
+  /* Convierte ArrayBuffer a string Base64 (mismo criterio que CloudEngine) */
+  _bufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  },
+
+  /* ── Sube el archivo en memoria a GitHub dentro de REPORTES/ ── */
+  async _uploadToGitHub(fileName) {
+    const token = AuthEngine.getToken();
+    if (!token) { alert('No hay token de GitHub configurado. Ve a Configuración → Token GitHub.'); return false; }
+
+    const buffer = DataStore.rawBuffer;
+    if (!buffer) { alert('No hay un archivo Excel cargado en el Dashboard.'); return false; }
+
+    try {
+      const base64Content = this._bufferToBase64(buffer);
+      const apiUrl = this.GITHUB_UPLOAD_BASE + encodeURIComponent(fileName);
+
+      /* Verifica si el archivo ya existe (para update con SHA) */
+      let sha = null;
+      const checkRes = await fetch(apiUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+      if (checkRes.ok) {
+        const existing = await checkRes.json();
+        sha = existing.sha;
+      }
+
+      const body = {
+        message: `Dashboard: ${sha ? 'Actualiza' : 'Guarda'} reporte ${fileName}`,
+        content: base64Content,
+      };
+      if (sha) body.sha = sha;
+
+      const putRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept':        'application/vnd.github.v3+json',
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!putRes.ok) {
+        const errData = await putRes.json().catch(() => ({}));
+        const detail  = errData.message || putRes.statusText;
+        if (putRes.status === 401) throw new Error('Token inválido o sin permisos (401). Verifica tu PAT.');
+        if (putRes.status === 422) throw new Error('Error de validación (422): ' + detail);
+        throw new Error(`Error ${putRes.status}: ${detail}`);
+      }
+
+      return true;
+    } catch (err) {
+      alert(`No se pudo guardar el archivo:\n${err.message}`);
+      return false;
+    }
+  },
+
+  /* ── Flujo completo del botón "Guardar" ── */
+  async handleClick() {
+    /* 1) Nuevo nombre para guardar el archivo */
+    const nameInput = window.prompt('Ingrese el nuevo nombre para guardar el archivo');
+    if (nameInput === null) return;
+    const newName = nameInput.trim();
+    if (newName === '') return;
+
+    /* 2) Responsable de la acción (mismo patrón que Eliminar/Cargar/Descargar) */
+    const user = AuditEngine.requestUser(`guardar "${newName}"`);
+    if (!user) return;
+
+    /* 3) Asegura extensión válida reutilizando la del archivo original si falta */
+    let safeName = newName;
+    if (!/\.(xlsx|xlsm|xls)$/i.test(safeName)) {
+      const origExt = (DataStore.fileName.match(/\.(xlsx|xlsm|xls)$/i) || [])[0] || '.xlsx';
+      safeName += origExt;
+    }
+
+    const btn = this._el('btnMenuGuardar');
+    const originalHTML = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando…';
+    }
+
+    const ok = await this._uploadToGitHub(safeName);
+
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+    }
+
+    if (!ok) return;
+
+    AuthEngine._toast(`"${safeName}" guardado correctamente ✓`, 'success');
+
+    /* 4) Notificación de auditoría por Telegram */
+    AuditEngine.notify({ action: 'guardar', user, fileName: safeName });
+
+    /* Invalida caché del Historial para reflejar el nuevo/actualizado archivo */
+    HistoryEngine._files = [];
+    const listEl = document.getElementById('listaReportesContainer');
+    if (listEl) listEl.innerHTML = '';
+    const modalHistorialEl = document.getElementById('modalHistorial');
+    if (modalHistorialEl && modalHistorialEl.classList.contains('show')) HistoryEngine.fetchFileList();
+  },
+
+  init() {
+    this._el('btnMenuGuardar')?.addEventListener('click', () => this.handleClick());
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
    13. DELETE ENGINE — Eliminación de archivos en GitHub via API DELETE
        Lista los archivos de /REPORTES y los elimina usando su SHA.
 ──────────────────────────────────────────────────────────── */
@@ -2463,6 +2626,7 @@ document.addEventListener('DOMContentLoaded', () => {
   HistoryEngine.init();
   AuthEngine.init();
   CloudEngine.init();
+  SaveEngine.init();
   DeleteEngine.init();
 
   /*

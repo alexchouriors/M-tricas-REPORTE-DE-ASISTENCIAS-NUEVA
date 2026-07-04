@@ -1,17 +1,16 @@
 /* ────────────────────────────────────────────────────────────
    TELEGRAM ENGINE — Notificaciones de auditoría vía Bot de Telegram
-   Envía mensajes HTML a un chat privado y a un canal en paralelo.
+   Envía mensajes HTML únicamente al chat privado del bot.
    No bloquea la interfaz: se dispara de forma "fire-and-forget"
-   desde los controladores (Eliminar / Cargar / Descargar), pero
-   expone una función async por si se desea awaitear/loguear.
+   desde los controladores (Eliminar / Cargar / Descargar / Guardar),
+   pero expone una función async por si se desea awaitear/loguear.
 ──────────────────────────────────────────────────────────── */
 const TelegramEngine = {
 
   /* ── Configuración del Bot ── */
   BOT_TOKEN: '8753096650:AAFHirqAgwydV497ylJasO5jkm0pbqmXAVI',
   CHAT_IDS: [
-    '1300912802',    // Chat privado
-    '-1001752702612', // Canal
+    '1300912802',    // Chat privado (único destino)
   ],
 
   /* ── Escapa caracteres especiales de HTML para Telegram parse_mode=HTML ── */
@@ -57,11 +56,13 @@ const TelegramEngine = {
       eliminar:   '🗑️',
       cargar:     '📥',
       descargar:  '📤',
+      guardar:    '💾',
     };
     const titles = {
       eliminar:   'ELIMINACIÓN DE ARCHIVO',
       cargar:     'CARGA DE ARCHIVO AL DASHBOARD',
       descargar:  'DESCARGA DE ARCHIVO',
+      guardar:    'GUARDADO DE ARCHIVO EN GITHUB',
     };
 
     const icon  = icons[action]  || 'ℹ️';

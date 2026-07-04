@@ -2578,6 +2578,76 @@ body {
   to   { transform: rotate(360deg); }
 }
 
+/* ── Botón "Guardar" del offcanvas — estado dinámico ── */
+.btn-menu-guardar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(148,163,184,.25);
+  color: rgba(226,232,240,.65);
+  border: 1px solid rgba(148,163,184,.35);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  cursor: not-allowed;
+  transition: background .2s, border-color .2s, box-shadow .2s, color .2s;
+  white-space: nowrap;
+}
+
+.btn-menu-guardar:disabled {
+  background: rgba(148,163,184,.25);
+  color: rgba(226,232,240,.55);
+  border-color: rgba(148,163,184,.35);
+  cursor: not-allowed;
+}
+
+/* Estado habilitado: se activa al cargar un Excel local */
+.btn-menu-guardar.is-enabled {
+  background: rgba(37,99,235,.9);
+  color: #fff;
+  border: 1px solid rgba(59,130,246,.7);
+  cursor: pointer;
+}
+
+.btn-menu-guardar.is-enabled:hover {
+  background: rgba(37,99,235,1);
+  border-color: #60a5fa;
+  box-shadow: 0 0 12px rgba(59,130,246,.35);
+  color: #fff;
+}
+
+.btn-menu-guardar .badge-beta-guardar {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  background: rgba(255,255,255,.18);
+  color: #bfdbfe;
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+[data-theme="light"] .btn-menu-guardar {
+  background: rgba(100,116,139,.15);
+  color: rgba(51,65,85,.6);
+  border-color: rgba(100,116,139,.3);
+}
+
+[data-theme="light"] .btn-menu-guardar.is-enabled {
+  background: rgba(37,99,235,.95);
+  color: #fff;
+  border-color: rgba(29,78,216,.7);
+}
+
+[data-theme="light"] .btn-menu-guardar.is-enabled:hover {
+  background: rgba(29,78,216,1);
+}
+
 /* ── Botón Eliminar (menú lateral) ── */
 .btn-menu-delete {
   display: inline-flex;
