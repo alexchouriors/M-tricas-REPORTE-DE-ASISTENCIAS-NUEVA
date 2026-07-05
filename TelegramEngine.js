@@ -57,12 +57,16 @@ const TelegramEngine = {
       cargar:     '📥',
       descargar:  '📤',
       guardar:    '💾',
+      login:      '👤',
+      logout:     '🚪',
     };
     const titles = {
       eliminar:   'ELIMINACIÓN DE ARCHIVO',
       cargar:     'CARGA DE ARCHIVO AL DASHBOARD',
       descargar:  'DESCARGA DE ARCHIVO',
       guardar:    'GUARDADO DE ARCHIVO EN GITHUB',
+      login:      'INICIO DE SESIÓN',
+      logout:     'CIERRE DE SESIÓN',
     };
 
     const icon  = icons[action]  || 'ℹ️';
@@ -80,11 +84,12 @@ const TelegramEngine = {
   },
 
   /**
-   * Notifica una acción de auditoría a AMBOS destinos (chat privado + canal)
-   * de forma simultánea (Promise.allSettled para no bloquear ni fallar en cascada).
+   * Notifica una acción de auditoría únicamente al chat privado del bot
+   * (ver CHAT_IDS), de forma simultánea si hubiera más de un destino
+   * (Promise.allSettled para no bloquear ni fallar en cascada).
    *
    * @param {Object} params
-   * @param {'eliminar'|'cargar'|'descargar'} params.action - Tipo de acción
+   * @param {'eliminar'|'cargar'|'descargar'|'guardar'} params.action - Tipo de acción
    * @param {string} params.user - Nombre de la persona que ejecuta la acción
    * @param {string} params.fileName - Nombre del archivo involucrado
    * @param {string} [params.extra] - Información adicional opcional
@@ -105,6 +110,43 @@ const TelegramEngine = {
     } catch (err) {
       /* Nunca debe romper el flujo principal de la app */
       console.error('[TelegramEngine] Error inesperado en notify():', err);
+      return [];
+    }
+  },
+
+  /**
+   * Notifica el inicio o cierre de sesión de un usuario con un mensaje
+   * corto y directo, enviado únicamente al chat privado del bot.
+   *
+   * @param {'login'|'logout'} action - Tipo de evento de sesión
+   * @param {string} user - Nombre del usuario que inicia/cierra sesión
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifySession(action, user) {
+    try {
+      const nombre = this._escapeHtml(user);
+      const now = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      const icon  = action === 'login' ? '🖥️' : '🖥️';
+      const title = action === 'login' ? 'ALERTA DE INICIO DE SESIÓN' : 'ALERTA DE CIERRE DE SESIÓN';
+      const foot  = action === 'login' ? 'Notificación de inicio de sesión' : 'Notificación de cierre de sesión';
+
+      let msg = `${icon} <b>${title}</b>\n\n`;
+      msg += `👤 <b>Usuario:</b> ${nombre}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n\n`;
+      msg += `🔒 <i>${foot} — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de sesión no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifySession():', err);
       return [];
     }
   },

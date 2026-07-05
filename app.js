@@ -1700,26 +1700,23 @@ const ThemeEngine = {
 
 /* ────────────────────────────────────────────────────────────
    9.5 AUDIT ENGINE — Capa de seguridad/auditoría compartida
-       Pide el nombre de quien ejecuta una acción sensible
-       (Eliminar / Cargar / Descargar) y notifica por Telegram.
+       Obtiene el nombre del usuario con sesión iniciada
+       (guardado por SessionEngine en sessionStorage) y notifica
+       por Telegram las acciones sensibles (Eliminar / Cargar /
+       Descargar / Guardar).
 ──────────────────────────────────────────────────────────── */
 const AuditEngine = {
 
   /**
-   * Solicita el nombre del responsable mediante prompt().
-   * Devuelve el nombre (trim) si es válido, o null si se canceló
-   * o se dejó en blanco — en cuyo caso el llamador debe abortar
-   * la acción con `return`.
+   * Devuelve el nombre del usuario actualmente en sesión.
+   * Ya no se pregunta con prompt(): el nombre se registró una
+   * única vez al iniciar sesión y se reutiliza para todas las
+   * acciones de auditoría.
    *
-   * @param {string} actionLabel - Texto descriptivo de la acción (para el prompt)
-   * @returns {string|null}
+   * @returns {string|null} Nombre del usuario o null si no hay sesión activa
    */
-  requestUser(actionLabel = 'esta acción') {
-    const input = window.prompt(`Por seguridad, ingresa tu nombre para registrar "${actionLabel}":`);
-    if (input === null) return null;          // Cancelado
-    const name = input.trim();
-    if (name === '') return null;             // En blanco
-    return name;
+  getUser() {
+    return SessionEngine.getUser();
   },
 
   /**
@@ -1735,6 +1732,161 @@ const AuditEngine = {
     /* Fire-and-forget: no se usa await para no bloquear la interfaz */
     TelegramEngine.notify({ action, user, fileName, extra })
       .catch(err => console.error('[AuditEngine] Error al notificar por Telegram:', err));
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   9.6 SESSION ENGINE — Pantalla de inicio de sesión + auditoría
+       Controla el overlay de login/logout, persiste el nombre
+       del usuario en sessionStorage y notifica por Telegram
+       cada inicio/cierre de sesión.
+──────────────────────────────────────────────────────────── */
+const SessionEngine = {
+
+  STORAGE_KEY: 'ccrm_dashboard_user',
+
+  _el(id) { return document.getElementById(id); },
+
+  /** Devuelve el nombre de usuario en sesión, o null si no hay sesión activa */
+  getUser() {
+    const name = sessionStorage.getItem(this.STORAGE_KEY);
+    return (name && name.trim() !== '') ? name : null;
+  },
+
+  /** true si hay una sesión activa */
+  isLoggedIn() {
+    return this.getUser() !== null;
+  },
+
+  /* ── Muestra el overlay de login (sin animación, estado inicial) ── */
+  showOverlay() {
+    const overlay = this._el('loginOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('login-overlay-hidden', 'login-overlay-fadeout');
+    overlay.style.display = 'flex';
+    /* Reinicia al estado "landing" (logo a la izquierda + botón) */
+    overlay.classList.remove('login-state-active');
+    const nameStep = this._el('loginNameStep');
+    if (nameStep) nameStep.classList.remove('login-name-step-visible');
+    const input = this._el('loginNameInput');
+    if (input) input.value = '';
+  },
+
+  /* ── Oculta el overlay instantáneamente (sin fade), usado al cargar con sesión ya activa ── */
+  hideOverlayInstant() {
+    const overlay = this._el('loginOverlay');
+    if (!overlay) return;
+    overlay.style.display = 'none';
+    overlay.classList.add('login-overlay-hidden');
+  },
+
+  /* ── Paso 1 → 2: centra el logo y revela el input de nombre ── */
+  _revealNameStep() {
+    const overlay = this._el('loginOverlay');
+    if (!overlay) return;
+    overlay.classList.add('login-state-active');
+    const nameStep = this._el('loginNameStep');
+    setTimeout(() => {
+      if (nameStep) nameStep.classList.add('login-name-step-visible');
+      this._el('loginNameInput')?.focus();
+    }, 450); // Coincide con la duración de la transición del logo (ver CSS)
+  },
+
+  /* ── Confirma el nombre, persiste la sesión y desvanece el overlay ── */
+  async _confirmLogin() {
+    const input = this._el('loginNameInput');
+    const name = (input?.value || '').trim();
+
+    const errEl = this._el('loginNameError');
+    if (name === '') {
+      if (errEl) errEl.classList.remove('d-none');
+      input?.focus();
+      return;
+    }
+    if (errEl) errEl.classList.add('d-none');
+
+    sessionStorage.setItem(this.STORAGE_KEY, name);
+
+    /* Notificación de auditoría por Telegram (fire-and-forget) */
+    if (typeof TelegramEngine !== 'undefined') {
+      TelegramEngine.notifySession('login', name)
+        .catch(err => console.error('[SessionEngine] Error al notificar inicio de sesión:', err));
+    }
+
+    /* Desvanece el overlay y revela el dashboard */
+    const overlay = this._el('loginOverlay');
+    if (overlay) {
+      overlay.classList.add('login-overlay-fadeout');
+      setTimeout(() => {
+        overlay.style.display = 'none';
+        overlay.classList.add('login-overlay-hidden');
+      }, 500); // Coincide con la duración del fade-out (ver CSS)
+    }
+
+    /* Refleja el usuario en sesión donde corresponda en la UI */
+    this._updateSessionUI(name);
+  },
+
+  /* ── Cierra la sesión: notifica, limpia storage, y recarga la app
+       para vaciar por completo las métricas/gráficos cargados
+       (así la siguiente sesión siempre arranca desde cero) ── */
+  async logout() {
+    const name = this.getUser();
+    sessionStorage.removeItem(this.STORAGE_KEY);
+
+    if (name && typeof TelegramEngine !== 'undefined') {
+      try {
+        /* Se espera el envío (con límite de 1.5s) para no perder la
+           notificación al recargar la página inmediatamente después */
+        await Promise.race([
+          TelegramEngine.notifySession('logout', name),
+          new Promise(resolve => setTimeout(resolve, 1500)),
+        ]);
+      } catch (err) {
+        console.error('[SessionEngine] Error al notificar cierre de sesión:', err);
+      }
+    }
+
+    /* Recarga completa: limpia DataStore, gráficos, tablas y filtros
+       en memoria, dejando el dashboard listo para el próximo usuario */
+    window.location.reload();
+  },
+
+  /* ── Actualiza referencias visuales del usuario activo (si existieran) ── */
+  _updateSessionUI(name) {
+    const label = this._el('sessionUserLabel');
+    if (label) label.textContent = name;
+  },
+
+  init() {
+    /* Si ya existe una sesión (misma pestaña), no se muestra el login */
+    if (this.isLoggedIn()) {
+      this.hideOverlayInstant();
+      this._updateSessionUI(this.getUser());
+    } else {
+      this.showOverlay();
+    }
+
+    /* Botón "Iniciar Sesión" (paso 1 → 2) */
+    this._el('btnIniciarSesion')?.addEventListener('click', () => this._revealNameStep());
+
+    /* Confirmar nombre (botón + Enter) */
+    this._el('btnConfirmarNombre')?.addEventListener('click', () => this._confirmLogin());
+    this._el('loginNameInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this._confirmLogin();
+    });
+
+    /* Botón "Cerrar sesión" en la barra lateral del Menú */
+    this._el('btnCerrarSesion')?.addEventListener('click', () => {
+      /* Cierra el offcanvas del menú si estuviera abierto */
+      const offcanvasEl = this._el('sidebarMenu');
+      if (offcanvasEl && window.bootstrap) {
+        const instance = bootstrap.Offcanvas.getInstance(offcanvasEl);
+        instance?.hide();
+      }
+      this.logout();
+    });
   },
 };
 
@@ -1874,19 +2026,19 @@ const HistoryEngine = {
 
       /* Botón "Cargar al Dashboard": valida usuario (auditoría) antes de ejecutar la lógica existente */
       item.querySelector('.btn-cargar-reporte').addEventListener('click', () => {
-        const user = AuditEngine.requestUser(`cargar "${file.name}" al Dashboard`);
-        if (!user) return; // Cancelado o nombre en blanco: se aborta la acción
+        const user = AuditEngine.getUser();
+        if (!user) return; // Sin sesión activa: se aborta la acción
 
         AuditEngine.notify({ action: 'cargar', user, fileName: file.name });
         this._loadFile(file, item);
       });
 
-      /* Botón "Descargar": valida usuario (auditoría) antes de permitir la descarga */
+      /* Botón "Descargar": registra al usuario en sesión antes de permitir la descarga */
       const btnDescargar = item.querySelector('a.btn-outline-success');
       if (btnDescargar) {
         btnDescargar.addEventListener('click', (e) => {
-          const user = AuditEngine.requestUser(`descargar "${file.name}"`);
-          if (!user) { e.preventDefault(); return; } // Cancelado o nombre en blanco: se aborta la acción
+          const user = AuditEngine.getUser();
+          if (!user) { e.preventDefault(); return; } // Sin sesión activa: se aborta la acción
 
           AuditEngine.notify({ action: 'descargar', user, fileName: file.name });
           /* No se hace preventDefault: el <a href> sigue su curso normal de descarga */
@@ -2419,8 +2571,8 @@ const SaveEngine = {
     const newName = nameInput.trim();
     if (newName === '') return;
 
-    /* 2) Responsable de la acción (mismo patrón que Eliminar/Cargar/Descargar) */
-    const user = AuditEngine.requestUser(`guardar "${newName}"`);
+    /* 2) Responsable de la acción: usuario con sesión activa */
+    const user = AuditEngine.getUser();
     if (!user) return;
 
     /* 3) Asegura extensión válida reutilizando la del archivo original si falta */
@@ -2552,9 +2704,9 @@ const DeleteEngine = {
     const confirmed = window.confirm(`¿Estás seguro que quieres eliminar "${file.name}"?\n\nEsta acción es irreversible.`);
     if (!confirmed) return;
 
-    /* Capa de seguridad/auditoría: exige nombre del responsable antes de eliminar */
-    const user = AuditEngine.requestUser(`eliminar "${file.name}"`);
-    if (!user) return; // Cancelado o nombre en blanco: se aborta la acción
+    /* Capa de seguridad/auditoría: usa el nombre del usuario con sesión activa */
+    const user = AuditEngine.getUser();
+    if (!user) return; // Sin sesión activa: se aborta la acción
 
     const token = AuthEngine.getToken();
     if (!token) { alert('No hay token de GitHub configurado. Ve a Configuración → Token GitHub.'); return; }
@@ -2619,6 +2771,7 @@ const DeleteEngine = {
 
 
 document.addEventListener('DOMContentLoaded', () => {
+  SessionEngine.init();
   ThemeEngine.init();
   UIController.init();
   GSheetsEngine.initModal();
