@@ -1771,6 +1771,16 @@ const SessionEngine = {
     if (nameStep) nameStep.classList.remove('login-name-step-visible');
     const input = this._el('loginNameInput');
     if (input) input.value = '';
+    this._el('loginNameError')?.classList.add('d-none');
+    this._el('loginNameNotFoundError')?.classList.add('d-none');
+    this._el('btnSolicitarSoporte')?.classList.add('d-none');
+    /* Reinicia también el paso de soporte por si quedó abierto */
+    this._el('loginSupportStep')?.classList.remove('login-support-step-visible');
+    this._el('loginSupportForm')?.classList.remove('d-none');
+    this._el('loginSupportSent')?.classList.add('d-none');
+    this._el('loginSupportError')?.classList.add('d-none');
+    const supportPhoneInput = this._el('supportPhoneInput');
+    if (supportPhoneInput) supportPhoneInput.value = '';
   },
 
   /* ── Oculta el overlay instantáneamente (sin fade), usado al cargar con sesión ya activa ── */
@@ -1793,19 +1803,80 @@ const SessionEngine = {
     }, 450); // Coincide con la duración de la transición del logo (ver CSS)
   },
 
-  /* ── Confirma el nombre, persiste la sesión y desvanece el overlay ── */
+  /**
+   * Devuelve el array de usuarios autorizados definido en USUARIOS.JS
+   * (variable global `USUARIOS_REGISTRADOS`, cargada vía <script src="USUARIOS.JS">
+   * antes que app.js — ver index.html). Se usa un global en vez de fetch()
+   * porque USUARIOS.JS no es un JSON válido (es un archivo .js con `const`),
+   * y además evita problemas de CORS si el dashboard se abre con file://
+   * en vez de servirse desde un servidor HTTP.
+   *
+   * Devuelve `null` (en vez de []) cuando la variable no está disponible,
+   * para poder distinguir "archivo cargado pero vacío" de "no se pudo cargar".
+   */
+  async _fetchUsuariosAutorizados() {
+    try {
+      if (typeof USUARIOS_REGISTRADOS === 'undefined') {
+        throw new Error('USUARIOS.JS no se cargó (variable USUARIOS_REGISTRADOS no definida).');
+      }
+      return Array.isArray(USUARIOS_REGISTRADOS) ? USUARIOS_REGISTRADOS : [];
+    } catch (err) {
+      console.error('[SessionEngine] Error al cargar USUARIOS.JS:', err);
+      return null;
+    }
+  },
+
+  /* ── Confirma el nombre: valida contra USUARIOS.JS antes de abrir sesión ── */
   async _confirmLogin() {
     const input = this._el('loginNameInput');
     const name = (input?.value || '').trim();
 
     const errEl = this._el('loginNameError');
+    const notFoundEl = this._el('loginNameNotFoundError');
+    const supportBtn = this._el('btnSolicitarSoporte');
+    const confirmBtn = this._el('btnConfirmarNombre');
+
     if (name === '') {
       if (errEl) errEl.classList.remove('d-none');
+      notFoundEl?.classList.add('d-none');
+      supportBtn?.classList.add('d-none');
       input?.focus();
       return;
     }
     if (errEl) errEl.classList.add('d-none');
+    notFoundEl?.classList.add('d-none');
 
+    /* Deshabilita el botón mientras se verifica contra USUARIOS.JS */
+    if (confirmBtn) confirmBtn.disabled = true;
+    const usuarios = await this._fetchUsuariosAutorizados();
+    if (confirmBtn) confirmBtn.disabled = false;
+
+    if (usuarios === null) {
+      /* Error de red/lectura del archivo: por seguridad no se permite el
+         acceso, pero se ofrece la vía de soporte igualmente */
+      if (notFoundEl) {
+        notFoundEl.textContent = 'No se pudo verificar tu usuario (error de conexión). Intenta de nuevo o solicita soporte.';
+        notFoundEl.classList.remove('d-none');
+      }
+      supportBtn?.classList.remove('d-none');
+      input?.focus();
+      return;
+    }
+
+    const nameUpper = name.toUpperCase();
+    const isAuthorized = usuarios.some(u => String(u).trim().toUpperCase() === nameUpper);
+
+    if (!isAuthorized) {
+      if (notFoundEl) {
+        notFoundEl.textContent = 'Usuario no encontrado. Verifica el nombre ingresado.';
+        notFoundEl.classList.remove('d-none');
+      }
+      supportBtn?.classList.remove('d-none');
+      input?.focus();
+      return;
+    }
+
+    supportBtn?.classList.add('d-none');
     sessionStorage.setItem(this.STORAGE_KEY, name);
 
     /* Notificación de auditoría por Telegram (fire-and-forget) */
@@ -1826,6 +1897,79 @@ const SessionEngine = {
 
     /* Refleja el usuario en sesión donde corresponda en la UI */
     this._updateSessionUI(name);
+  },
+
+  /* ── Paso 2 → 3: oculta el formulario de nombre y revela el de soporte,
+       pre-llenando el nombre que el usuario intentó ingresar ── */
+  _showSupportStep() {
+    const nameStep = this._el('loginNameStep');
+    const supportStep = this._el('loginSupportStep');
+    const attemptedName = (this._el('loginNameInput')?.value || '').trim();
+
+    nameStep?.classList.remove('login-name-step-visible');
+    setTimeout(() => {
+      const supportUserInput = this._el('supportUserInput');
+      if (supportUserInput) supportUserInput.value = attemptedName;
+      supportStep?.classList.add('login-support-step-visible');
+      this._el('supportPhoneInput')?.focus();
+    }, 300);
+  },
+
+  /* ── Regresa del paso de soporte (o de la confirmación) al formulario de nombre,
+       reiniciando el subformulario de soporte a su estado inicial ── */
+  _backToLoginFromSupport() {
+    const nameStep = this._el('loginNameStep');
+    const supportStep = this._el('loginSupportStep');
+
+    supportStep?.classList.remove('login-support-step-visible');
+
+    setTimeout(() => {
+      this._el('loginSupportForm')?.classList.remove('d-none');
+      this._el('loginSupportSent')?.classList.add('d-none');
+      const phoneInput = this._el('supportPhoneInput');
+      if (phoneInput) phoneInput.value = '';
+      this._el('loginSupportError')?.classList.add('d-none');
+      nameStep?.classList.add('login-name-step-visible');
+    }, 300);
+  },
+
+  /* ── Valida y envía la solicitud de soporte (nombre + teléfono) por Telegram ── */
+  async _submitSupportRequest() {
+    const userInput = this._el('supportUserInput');
+    const phoneInput = this._el('supportPhoneInput');
+    const errEl = this._el('loginSupportError');
+
+    const user = (userInput?.value || '').trim();
+    const phone = (phoneInput?.value || '').trim();
+
+    /* Debe iniciar con '+', seguido de dígitos y espacios opcionales,
+       con un mínimo de 10 caracteres en total */
+    const phoneRegex = /^\+[\d\s]+$/;
+    const digitCount = (phone.match(/\d/g) || []).length;
+    const isValidPhone = phone.length >= 10 && phoneRegex.test(phone) && digitCount >= 9;
+
+    if (user === '' || !isValidPhone) {
+      if (errEl) errEl.classList.remove('d-none');
+      phoneInput?.focus();
+      return;
+    }
+    if (errEl) errEl.classList.add('d-none');
+
+    const btn = this._el('btnEnviarSoporte');
+    if (btn) btn.disabled = true;
+
+    if (typeof TelegramEngine !== 'undefined') {
+      try {
+        await TelegramEngine.notifySupport(user, phone);
+      } catch (err) {
+        console.error('[SessionEngine] Error al notificar solicitud de soporte:', err);
+      }
+    }
+
+    if (btn) btn.disabled = false;
+
+    this._el('loginSupportForm')?.classList.add('d-none');
+    this._el('loginSupportSent')?.classList.remove('d-none');
   },
 
   /* ── Cierra la sesión: notifica, limpia storage, y recarga la app
@@ -1876,6 +2020,15 @@ const SessionEngine = {
     this._el('loginNameInput')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this._confirmLogin();
     });
+
+    /* Flujo de soporte: usuario no encontrado en USUARIOS.JS */
+    this._el('btnSolicitarSoporte')?.addEventListener('click', () => this._showSupportStep());
+    this._el('btnEnviarSoporte')?.addEventListener('click', () => this._submitSupportRequest());
+    this._el('supportPhoneInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this._submitSupportRequest();
+    });
+    this._el('btnVolverLoginDesdeSoporte')?.addEventListener('click', () => this._backToLoginFromSupport());
+    this._el('btnVolverLoginFinal')?.addEventListener('click', () => this._backToLoginFromSupport());
 
     /* Botón "Cerrar sesión" en la barra lateral del Menú */
     this._el('btnCerrarSesion')?.addEventListener('click', () => {

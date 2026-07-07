@@ -3066,6 +3066,91 @@ body {
   box-shadow: 0 0 14px rgba(34,197,94,.4);
 }
 
+/* ── Enlace "¿No puedes acceder? Solicitar soporte" ── */
+.login-btn-support {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color .2s;
+  margin-top: 2px;
+}
+
+.login-btn-support:hover {
+  color: var(--brand-blue);
+}
+
+/* ── Paso 3: formulario de soporte (mismo patrón de aparición que el paso 2) ── */
+.login-support-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(16px);
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity .4s ease, transform .4s ease, max-height .4s ease;
+}
+
+.login-support-step-visible {
+  max-height: 360px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.login-support-form,
+.login-support-sent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.login-btn-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 22px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+
+.login-btn-back:hover {
+  border-color: var(--brand-blue);
+  color: var(--text-main);
+}
+
+.login-support-sent-icon {
+  font-size: 40px;
+  line-height: 1;
+  color: var(--success);
+}
+
+.login-support-sent-text {
+  font-family: 'Outfit', sans-serif;
+  font-size: 15px;
+  color: var(--text-main);
+  text-align: center;
+  max-width: 280px;
+  margin: 0;
+}
+
 /* ── Responsive: en pantallas angostas, todo se apila en columna
        desde el estado inicial (logo arriba, botón debajo) ── */
 @media (max-width: 640px) {

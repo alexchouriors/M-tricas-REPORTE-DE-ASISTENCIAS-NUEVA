@@ -1,0 +1,5 @@
+const USUARIOS_REGISTRADOS = [
+  "MASTER",
+  "PASTOR",
+  "PASTORA"
+];

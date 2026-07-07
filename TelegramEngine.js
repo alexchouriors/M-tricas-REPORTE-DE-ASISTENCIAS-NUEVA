@@ -150,4 +150,41 @@ const TelegramEngine = {
       return [];
     }
   },
+
+  /**
+   * Notifica una solicitud de soporte cuando un usuario no reconocido
+   * (no presente en USUARIOS.JSON) intenta acceder al dashboard y
+   * deja sus datos de contacto para que el administrador lo asista.
+   * Se envía únicamente al chat privado del bot.
+   *
+   * @param {string} user - Nombre de usuario que intentó ingresar
+   * @param {string} phone - Número de teléfono de contacto (con su '+')
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifySupport(user, phone) {
+    try {
+      const nombre   = this._escapeHtml(user);
+      const telefono = this._escapeHtml(phone);
+      const now      = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `⚠️ <b>SOLICITUD DE SOPORTE</b>\n\n`;
+      msg += `👤 <b>Usuario intentado:</b> ${nombre}\n`;
+      msg += `📱 <b>Teléfono de contacto:</b> ${telefono}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n\n`;
+      msg += `📝 <i>El usuario no pudo acceder al dashboard y requiere asistencia.</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de soporte no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifySupport():', err);
+      return [];
+    }
+  },
 };

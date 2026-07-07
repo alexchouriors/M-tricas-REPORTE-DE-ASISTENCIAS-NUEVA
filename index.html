@@ -56,9 +56,43 @@
       <input type="text" id="loginNameInput" class="login-name-input"
              placeholder="Ej. Juan Pérez" autocomplete="off" maxlength="60" />
       <div class="login-name-error d-none" id="loginNameError">Por favor ingresa tu nombre.</div>
+      <div class="login-name-error d-none" id="loginNameNotFoundError">Usuario no encontrado. Verifica el nombre ingresado.</div>
       <button type="button" class="login-btn-confirm" id="btnConfirmarNombre">
         <i class="bi bi-check-lg me-2"></i>Ingresar
       </button>
+      <button type="button" class="login-btn-support d-none" id="btnSolicitarSoporte">
+        <i class="bi bi-life-preserver me-2"></i>¿No puedes acceder? Solicitar soporte
+      </button>
+    </div>
+
+    <!-- Paso 3: solicitud de soporte (usuario no encontrado en USUARIOS.JSON) -->
+    <div class="login-support-step" id="loginSupportStep">
+
+      <div class="login-support-form" id="loginSupportForm">
+        <label class="login-name-label">Solicitud de soporte</label>
+        <input type="text" id="supportUserInput" class="login-name-input"
+               placeholder="Nombre de usuario" autocomplete="off" maxlength="60" />
+        <input type="tel" id="supportPhoneInput" class="login-name-input"
+               placeholder="+ Código País Número (Ej. +58 4121234567)" autocomplete="off" maxlength="30" />
+        <div class="login-name-error d-none" id="loginSupportError">
+          Ingresa un número válido: debe iniciar con "+" y tener al menos 10 caracteres (Ej. +58 4121234567).
+        </div>
+        <button type="button" class="login-btn-confirm" id="btnEnviarSoporte">
+          <i class="bi bi-send me-2"></i>Enviar solicitud
+        </button>
+        <button type="button" class="login-btn-back" id="btnVolverLoginDesdeSoporte">
+          <i class="bi bi-arrow-left me-2"></i>Volver
+        </button>
+      </div>
+
+      <div class="login-support-sent d-none" id="loginSupportSent">
+        <div class="login-support-sent-icon"><i class="bi bi-check-circle"></i></div>
+        <p class="login-support-sent-text">Solicitud enviada. El administrador te contactará.</p>
+        <button type="button" class="login-btn-back" id="btnVolverLoginFinal">
+          <i class="bi bi-arrow-left me-2"></i>Volver al inicio
+        </button>
+      </div>
+
     </div>
 
   </div>
@@ -1055,6 +1089,7 @@
 
 <!-- App JS -->
 <script src="TelegramEngine.js"></script>
+<script src="USUARIOS.JS"></script>
 <script src="app.js"></script>
 
 <!-- PWA — Registro del Service Worker
