@@ -1042,6 +1042,15 @@ const UIController = {
         DataStore.rawBuffer = e.target.result;
         CloudEngine.enableUploadBtn(file.name);
         SaveEngine.enable(file.name);
+
+        /* Notificación de auditoría: carga de archivo local (fire-and-forget).
+           Cubre tanto el input principal de la pantalla de carga como el
+           botón "Cargar Excel" de la barra superior, ya que ambos apuntan
+           al mismo #fileInput y disparan este mismo flujo. */
+        const auditUser = AuditEngine.getUser();
+        if (auditUser) {
+          AuditEngine.notify({ action: 'cargar_local', user: auditUser, fileName: file.name });
+        }
       } catch (err) {
         console.error('Error al procesar el archivo:', err);
         alert(`Error al leer el archivo:\n${err.message}`);
@@ -1872,6 +1881,14 @@ const SessionEngine = {
         notFoundEl.classList.remove('d-none');
       }
       supportBtn?.classList.remove('d-none');
+
+      /* Notificación de auditoría: intento de login fallido (fire-and-forget),
+         disparada antes de que el usuario vea la opción de "Solicitar soporte" */
+      if (typeof TelegramEngine !== 'undefined') {
+        TelegramEngine.notifyFailedLogin(name)
+          .catch(err => console.error('[SessionEngine] Error al notificar login fallido:', err));
+      }
+
       input?.focus();
       return;
     }

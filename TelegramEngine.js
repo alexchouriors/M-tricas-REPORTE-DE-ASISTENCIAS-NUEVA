@@ -53,20 +53,22 @@ const TelegramEngine = {
   /* ── Construye el cuerpo del mensaje HTML según la acción ── */
   _buildMessage({ action, user, fileName, extra }) {
     const icons = {
-      eliminar:   '🗑️',
-      cargar:     '📥',
-      descargar:  '📤',
-      guardar:    '💾',
-      login:      '👤',
-      logout:     '🚪',
+      eliminar:    '🗑️',
+      cargar:      '📥',
+      cargar_local:'📥',
+      descargar:   '📤',
+      guardar:     '💾',
+      login:       '👤',
+      logout:      '🚪',
     };
     const titles = {
-      eliminar:   'ELIMINACIÓN DE ARCHIVO',
-      cargar:     'CARGA DE ARCHIVO AL DASHBOARD',
-      descargar:  'DESCARGA DE ARCHIVO',
-      guardar:    'GUARDADO DE ARCHIVO EN GITHUB',
-      login:      'INICIO DE SESIÓN',
-      logout:     'CIERRE DE SESIÓN',
+      eliminar:    'ELIMINACIÓN DE ARCHIVO',
+      cargar:      'CARGA DE ARCHIVO AL DASHBOARD',
+      cargar_local:'CARGA DE ARCHIVO LOCAL AL DASHBOARD',
+      descargar:   'DESCARGA DE ARCHIVO',
+      guardar:     'GUARDADO DE ARCHIVO EN GITHUB',
+      login:       'INICIO DE SESIÓN',
+      logout:      'CIERRE DE SESIÓN',
     };
 
     const icon  = icons[action]  || 'ℹ️';
@@ -152,8 +154,42 @@ const TelegramEngine = {
   },
 
   /**
+   * Notifica un intento de inicio de sesión fallido, cuando el nombre
+   * ingresado no existe en la lista de usuarios autorizados (USUARIOS.JS).
+   * Se envía únicamente al chat privado del bot, antes de mostrar al
+   * usuario la pantalla de "Solicitar soporte".
+   *
+   * @param {string} user - Nombre ingresado que no fue encontrado
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifyFailedLogin(user) {
+    try {
+      const nombre = this._escapeHtml(user);
+      const now = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `🖥️ <b>ALERTA DE INICIÓ DE SESIÓN FALLIDO</b>\n\n`;
+      msg += `👤 <b>Usuario:</b> ${nombre}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)} el cual hizo el intento\n\n`;
+      msg += `🔒 <i>Notificación de inició de sesión fallido — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de login fallido no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifyFailedLogin():', err);
+      return [];
+    }
+  },
+
+  /**
    * Notifica una solicitud de soporte cuando un usuario no reconocido
-   * (no presente en USUARIOS.JSON) intenta acceder al dashboard y
+   * (no presente en USUARIOS.JS) intenta acceder al dashboard y
    * deja sus datos de contacto para que el administrador lo asista.
    * Se envía únicamente al chat privado del bot.
    *

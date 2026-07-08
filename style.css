@@ -2001,6 +2001,16 @@ body {
 ================================================================ */
 
 /* ── Botón "Guardar en la Nube" (topbar) ── */
+/* NOTA: oculto permanentemente por decisión de producto — la misma función
+   ya está disponible en el Menú lateral ("Guardar"). Se oculta solo a nivel
+   visual (display:none con !important) para no tocar la lógica de
+   CloudEngine ni de enableUploadBtn()/disableUploadBtn() en app.js, que
+   siguen ejecutándose con normalidad (el botón simplemente nunca se
+   muestra en la barra superior, sin importar qué clases reciba). */
+#btnCloudSave {
+  display: none !important;
+}
+
 .btn-cloud-save {
   display: inline-flex;
   align-items: center;
