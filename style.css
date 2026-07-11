@@ -1493,6 +1493,93 @@ body {
   color: var(--gold);
 }
 
+/* ── Botón "Vista de Escritorio" (exclusivo para móviles) ── */
+.btn-desktop-view {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, color .2s;
+  flex-shrink: 0;
+}
+.btn-desktop-view:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.btn-desktop-view.active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #1a1a1a;
+}
+
+[data-theme="light"] .btn-desktop-view {
+  background: #f1f5f9;
+  border-color: rgba(0,0,0,.12);
+  color: #1e293b;
+}
+[data-theme="light"] .btn-desktop-view:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Oculto por completo en resoluciones de escritorio (>992px);
+   solo tiene sentido en móviles, donde el usuario puede querer
+   forzar el layout expandido de PC. */
+@media (min-width: 992.02px) {
+  .btn-desktop-view {
+    display: none !important;
+  }
+}
+
+/* ================================================================
+   MODO "VISTA DE ESCRITORIO" FORZADO (.desktop-mode en <body>)
+   Se activa solo desde móviles vía #btnDesktopView (ver app.js).
+   Sobrescribe el comportamiento responsivo normal: las tablas no
+   colapsan/wrappean y los contenedores flex no se apilan en vertical.
+================================================================ */
+body.desktop-mode {
+  min-width: 1200px;
+  overflow-x: auto;
+}
+
+body.desktop-mode .table-responsive {
+  overflow-x: visible;
+}
+
+body.desktop-mode table {
+  table-layout: auto;
+  white-space: nowrap;
+}
+
+body.desktop-mode td,
+body.desktop-mode th {
+  white-space: nowrap;
+}
+
+/* Contenedores flex principales: fuerzan fila en vez de columna */
+body.desktop-mode .d-flex {
+  flex-wrap: nowrap !important;
+}
+
+body.desktop-mode .flex-column,
+body.desktop-mode .flex-md-row,
+body.desktop-mode .flex-sm-column {
+  flex-direction: row !important;
+}
+
+body.desktop-mode .topbar {
+  flex-wrap: nowrap !important;
+}
+
+body.desktop-mode .container,
+body.desktop-mode .container-fluid {
+  max-width: none !important;
+}
+
 /* ── BETA Tag ── */
 .beta-tag {
   display: inline-flex;
@@ -2695,6 +2782,151 @@ body {
   border-radius: 4px;
   padding: 1px 5px;
   vertical-align: middle;
+}
+
+/* ── Botón "Base de Datos (Beta)" (menú lateral) ── */
+.btn-menu-dbdefault {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(22,163,74,.9);
+  color: #fff;
+  border: 1px solid rgba(34,197,94,.6);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, box-shadow .2s;
+  white-space: nowrap;
+}
+
+.btn-menu-dbdefault:hover {
+  background: rgba(22,163,74,1);
+  border-color: #4ade80;
+  box-shadow: 0 0 12px rgba(34,197,94,.35);
+  color: #fff;
+}
+
+.btn-menu-dbdefault .badge-beta-db {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  background: rgba(255,255,255,.18);
+  color: #dcfce7;
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+[data-theme="light"] .btn-menu-dbdefault {
+  background: rgba(21,128,61,.92);
+  border-color: rgba(34,197,94,.5);
+}
+
+[data-theme="light"] .btn-menu-dbdefault:hover {
+  background: #15803d;
+  border-color: #22c55e;
+}
+
+/* ── Botón "Establecer como predeterminado" en modal Base de Datos ── */
+.btn-set-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: rgba(34,197,94,.12);
+  color: #22c55e;
+  border: 1px solid rgba(34,197,94,.35);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+  white-space: nowrap;
+  font-family: 'Outfit', sans-serif;
+}
+
+.btn-set-default:hover:not(:disabled) {
+  background: rgba(34,197,94,.25);
+  border-color: #22c55e;
+  box-shadow: 0 0 8px rgba(34,197,94,.2);
+}
+
+.btn-set-default:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .btn-set-default {
+  background: rgba(21,128,61,.08);
+  color: #15803d;
+  border-color: rgba(21,128,61,.3);
+}
+
+[data-theme="light"] .btn-set-default:hover:not(:disabled) {
+  background: rgba(21,128,61,.16);
+  border-color: #15803d;
+}
+
+/* ── Estado "ya es el predeterminado" (botón deshabilitado, sólido) ── */
+.btn-set-default.is-current {
+  background: rgba(34,197,94,.9);
+  color: #fff;
+  border-color: rgba(34,197,94,.9);
+  opacity: 1;
+}
+
+[data-theme="light"] .btn-set-default.is-current {
+  background: #16a34a;
+  color: #fff;
+  border-color: #16a34a;
+}
+
+/* ── Fila resaltada del archivo predeterminado actual en la lista ── */
+.list-group-item-current-default {
+  border-color: rgba(34,197,94,.5) !important;
+  background: rgba(34,197,94,.07) !important;
+}
+
+[data-theme="light"] .list-group-item-current-default {
+  background: rgba(21,128,61,.06) !important;
+  border-color: rgba(21,128,61,.35) !important;
+}
+
+/* ── Badge "Predeterminado" junto al nombre del archivo ── */
+.badge-current-default {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  background: rgba(34,197,94,.18);
+  color: #22c55e;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+[data-theme="light"] .badge-current-default {
+  background: rgba(21,128,61,.12);
+  color: #15803d;
+}
+
+/* ── Línea "Predeterminado actual: ..." dentro del banner del modal ── */
+.db-default-current-label {
+  margin-top: 6px;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+[data-theme="light"] .db-default-current-label {
+  color: #15803d;
 }
 
 /* ── Botón papelera en lista de archivos del modal Eliminar ── */

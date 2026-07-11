@@ -12,7 +12,7 @@ const USUARIOS_REGISTRADOS = [
   "YENSI" ,
   "SORENNIS" ,
   "JOSEFA" ,
-  "FRANGLIS" ,
+  "FRANGLYS" ,
   "DAYANA" ,
   "YELSY" ,
   "PASTOR CARLOS D" ,

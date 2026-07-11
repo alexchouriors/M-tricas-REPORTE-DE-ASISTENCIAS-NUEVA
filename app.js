@@ -983,6 +983,15 @@ const UIController = {
       e.target.value = ''; // Permite recargar el mismo archivo
     });
 
+    // Vista de Escritorio (solo visible/relevante en móviles — ver style.css).
+    // Cambio estrictamente visual: alterna la clase .desktop-mode en <body>,
+    // que fuerza el layout expandido de PC vía CSS. No toca ningún motor
+    // de datos, sesión ni notificaciones.
+    document.getElementById('btnDesktopView')?.addEventListener('click', function () {
+      document.body.classList.toggle('desktop-mode');
+      this.classList.toggle('active');
+    });
+
     // Toggle excluidos — botón oculto visualmente en topbar (ver index.html).
     // Listener comentado para evitar referencias muertas; la lógica de
     // DataStore.includeExcluidos / this.refresh() permanece intacta para uso futuro.
@@ -1902,6 +1911,12 @@ const SessionEngine = {
         .catch(err => console.error('[SessionEngine] Error al notificar inicio de sesión:', err));
     }
 
+    /* Auto-carga del archivo predeterminado (config.json → REPORTES/<archivo>),
+       fire-and-forget: no bloquea el fade-out del overlay ni el login en sí */
+    if (typeof AutoLoadEngine !== 'undefined') {
+      AutoLoadEngine.loadDefaultFile();
+    }
+
     /* Desvanece el overlay y revela el dashboard */
     const overlay = this._el('loginOverlay');
     if (overlay) {
@@ -2650,7 +2665,7 @@ const SaveEngine = {
     btn.title = `Guardar "${fileName || ''}" en GitHub`;
 
     if (icon) icon.className = 'bi bi-save2-fill';
-    if (text) text.innerHTML = 'Guardar <span class="badge-beta-guardar ms-1">(beta)</span>';
+    if (text) text.textContent = 'Guardar';
   },
 
   /* ── Vuelve al estado bloqueado por defecto ── */
@@ -2940,6 +2955,406 @@ const DeleteEngine = {
 };
 
 
+/* ────────────────────────────────────────────────────────────
+   13.5 DB DEFAULT ENGINE — Botón "Base de Datos (Beta)"
+       Flujo: pide token de GitHub por sesión (nunca leído/guardado
+       en caché ni localStorage) → abre un modal clon de "Eliminar"
+       que lista los .xlsx del repositorio → "Establecer como
+       predeterminado" hace PUT a config.json en la raíz del repo
+       con { archivo_predeterminado: "<nombre>.xlsx" }.
+──────────────────────────────────────────────────────────── */
+const DbDefaultEngine = {
+
+  GITHUB_CONTENTS_BASE: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/',
+  VALID_EXTS: ['.xlsx', '.xlsm', '.xls'],
+
+  _files: [],
+  _sessionToken: '',   // Solo en memoria durante la sesión del modal; nunca persistido
+  _currentDefault: '', // Nombre del archivo actualmente marcado como predeterminado (config.json)
+
+  _el(id) { return document.getElementById(id); },
+
+  _ext(name) {
+    const m = name.toLowerCase().match(/\.(xlsx|xlsm|xls)$/);
+    return m ? '.' + m[1] : '';
+  },
+
+  /* ── Paso 1: modal de token efímero ── */
+  _openTokenModal() {
+    this._sessionToken = '';
+    const input = this._el('dbTokenInput');
+    if (input) input.value = '';
+    this._setTokenError('');
+    const modalEl = this._el('modalDbToken');
+    if (!modalEl) return;
+    this._tokenModalRef = this._tokenModalRef || new bootstrap.Modal(modalEl);
+    this._tokenModalRef.show();
+  },
+
+  _setTokenError(msg) {
+    const el = this._el('dbTokenModalError');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle('d-none', !msg);
+  },
+
+  _confirmToken() {
+    const val = this._el('dbTokenInput')?.value.trim() || '';
+    if (!val) { this._setTokenError('El token no puede estar vacío.'); return; }
+
+    /* Guardado SOLO en memoria (variable de instancia); jamás en
+       localStorage/sessionStorage/caché, y se pide de nuevo en
+       cada apertura del botón "Base de Datos (Beta)". */
+    this._sessionToken = val;
+    this._setTokenError('');
+    this._tokenModalRef?.hide();
+
+    /* Abre el modal de configuración tras el cierre del de token */
+    setTimeout(() => this._openConfigModal(), 300);
+  },
+
+  /* ── Paso 2: modal clon de "Eliminar" con la lista de archivos ── */
+  _openConfigModal() {
+    const modalEl = this._el('modalDbDefault');
+    if (!modalEl) return;
+    this._configModalRef = this._configModalRef || new bootstrap.Modal(modalEl);
+    this._files = [];
+    const listEl = this._el('listaDbDefaultContainer');
+    if (listEl) listEl.innerHTML = '';
+    this._configModalRef.show();
+    this.fetchFileList();
+  },
+
+  _setState(state) {
+    const map = { loading: 'dbDefaultLoading', error: 'dbDefaultError', empty: 'dbDefaultEmpty' };
+    Object.entries(map).forEach(([key, id]) => {
+      const el = this._el(id);
+      if (el) el.classList.toggle('d-none', key !== state);
+    });
+    const listEl = this._el('listaDbDefaultContainer');
+    if (listEl) listEl.classList.toggle('d-none', state !== 'list');
+  },
+
+  _showError(msg) {
+    const msgEl = this._el('dbDefaultErrorMsg');
+    if (msgEl) msgEl.textContent = msg;
+    this._setState('error');
+  },
+
+  /* ── Consulta config.json y muestra cuál es el archivo predeterminado
+       actual en el banner informativo del modal ── */
+  async _fetchCurrentDefault() {
+    const label = this._el('dbDefaultCurrentLabel');
+    try {
+      const res = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
+        cache: 'no-store',
+        headers: { 'Accept': 'application/vnd.github.v3.raw' },
+      });
+      if (!res.ok) {
+        this._currentDefault = '';
+        if (label) label.innerHTML = '<i class="bi bi-star me-1"></i>Aún no hay ningún archivo predeterminado configurado.';
+        return;
+      }
+      const config = await res.json().catch(() => null);
+      this._currentDefault = config?.archivo_predeterminado || '';
+      if (label) {
+        label.innerHTML = this._currentDefault
+          ? `<i class="bi bi-star-fill me-1"></i>Predeterminado actual: <strong>${this._currentDefault}</strong>`
+          : '<i class="bi bi-star me-1"></i>Aún no hay ningún archivo predeterminado configurado.';
+      }
+    } catch (err) {
+      this._currentDefault = '';
+      if (label) label.innerHTML = '<i class="bi bi-star me-1"></i>No se pudo consultar el predeterminado actual.';
+    }
+  },
+
+  async fetchFileList() {
+    this._setState('loading');
+    /* Consulta en paralelo cuál es el predeterminado actual, para
+       reflejarlo en el banner y marcar el item correspondiente */
+    this._fetchCurrentDefault();
+    try {
+      const headers = { 'Accept': 'application/vnd.github.v3+json' };
+      if (this._sessionToken) headers['Authorization'] = `Bearer ${this._sessionToken}`;
+
+      const res = await fetch(this.GITHUB_CONTENTS_BASE + 'REPORTES', { headers });
+      if (!res.ok) {
+        const msg = res.status === 401
+          ? 'Token inválido o sin permisos (401).'
+          : res.status === 404
+            ? 'Repositorio o carpeta no encontrada (404).'
+            : res.status === 403
+              ? 'Límite de peticiones a la API de GitHub excedido. Intenta en unos minutos.'
+              : `Error ${res.status}: ${res.statusText}`;
+        throw new Error(msg);
+      }
+
+      const items = await res.json();
+      this._files = items.filter(i => i.type === 'file' && this.VALID_EXTS.includes(this._ext(i.name)));
+
+      if (this._files.length === 0) { this._setState('empty'); return; }
+      this._renderList();
+      this._setState('list');
+    } catch (err) {
+      this._showError(err.message || 'Error desconocido al contactar la API de GitHub.');
+    }
+  },
+
+  _renderList() {
+    const listEl = this._el('listaDbDefaultContainer');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    this._files.forEach((file, idx) => {
+      const isCurrent = !!this._currentDefault && file.name === this._currentDefault;
+
+      const item = document.createElement('div');
+      item.className = 'list-group-item d-flex align-items-center justify-content-between flex-wrap gap-2'
+        + (isCurrent ? ' list-group-item-current-default' : '');
+      item.dataset.idx = idx;
+      item.innerHTML = `
+        <div class="d-flex align-items-center gap-2 text-truncate">
+          <i class="bi bi-file-earmark-spreadsheet text-success fs-5"></i>
+          <span class="text-truncate" title="${file.name}">${file.name}</span>
+          ${isCurrent ? '<span class="badge-current-default ms-1"><i class="bi bi-star-fill me-1"></i>Predeterminado</span>' : ''}
+        </div>
+        <button type="button" class="btn-set-default${isCurrent ? ' is-current' : ''}" data-idx="${idx}"
+                title="${isCurrent ? `"${file.name}" ya es el predeterminado` : `Establecer ${file.name} como predeterminado`}"
+                ${isCurrent ? 'disabled' : ''}>
+          <i class="bi bi-star-fill"></i>${isCurrent ? 'Ya es el predeterminado' : 'Establecer como predeterminado'}
+        </button>`;
+
+      if (!isCurrent) {
+        item.querySelector('.btn-set-default').addEventListener('click', () => this._setDefault(file, item));
+      }
+      listEl.appendChild(item);
+    });
+  },
+
+  /* ── PUT a config.json en la raíz del repo con el nombre elegido ── */
+  async _setDefault(file, itemEl) {
+    const token = this._sessionToken;
+    if (!token) { alert('Sesión de token expirada. Vuelve a abrir "Base de Datos (Beta)".'); return; }
+
+    const btn = itemEl.querySelector('.btn-set-default');
+    const originalHTML = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+
+    try {
+      const apiUrl = this.GITHUB_CONTENTS_BASE + 'config.json';
+
+      /* Comprueba si config.json ya existe (para actualizar con su SHA).
+         cache:'no-store' evita que el navegador reutilice una respuesta
+         404 cacheada de la primera vez que el archivo aún no existía
+         (causa del error 422 "sha wasn't supplied" en el segundo intento).
+         NOTA: no se agrega el header 'Cache-Control' porque no es un
+         header "simple" para CORS — GitHub rechaza el preflight que
+         dispara y el fetch entero falla con "Failed to fetch". La opción
+         cache:'no-store' del propio fetch() ya evita la caché sin
+         necesidad de headers adicionales. */
+      let sha = null;
+      const checkRes = await fetch(apiUrl, {
+        cache: 'no-store',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+      if (checkRes.ok) {
+        const existing = await checkRes.json();
+        sha = existing.sha;
+      }
+
+      const content = JSON.stringify({ archivo_predeterminado: file.name }, null, 2);
+      const base64Content = btoa(unescape(encodeURIComponent(content)));
+
+      const body = {
+        message: `Dashboard: Establece "${file.name}" como archivo predeterminado`,
+        content: base64Content,
+      };
+      if (sha) body.sha = sha;
+
+      let putRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept':        'application/vnd.github.v3+json',
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      /* Salvaguarda: si el archivo ya existía pero el sha no llegó a
+         tiempo (422 "sha wasn't supplied"), refresca el sha una vez
+         más y reintenta el PUT antes de reportar error. */
+      if (!putRes.ok && putRes.status === 422) {
+        const retryCheck = await fetch(apiUrl, {
+          cache: 'no-store',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json',
+          },
+        });
+        if (retryCheck.ok) {
+          const existing = await retryCheck.json();
+          if (existing.sha) {
+            body.sha = existing.sha;
+            putRes = await fetch(apiUrl, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept':        'application/vnd.github.v3+json',
+                'Content-Type':  'application/json',
+              },
+              body: JSON.stringify(body),
+            });
+          }
+        }
+      }
+
+      if (!putRes.ok) {
+        const errData = await putRes.json().catch(() => ({}));
+        const detail  = errData.message || putRes.statusText;
+        if (putRes.status === 401) throw new Error('Token inválido o sin permisos (401). Verifica tu PAT.');
+        if (putRes.status === 422) throw new Error('Error de validación (422): ' + detail);
+        throw new Error(`Error ${putRes.status}: ${detail}`);
+      }
+
+      AuthEngine._toast(`"${file.name}" establecido como predeterminado ✓`, 'success');
+
+      /* Refleja de inmediato el nuevo predeterminado en la UI del modal
+         (banner + badge en la lista), sin esperar a la próxima apertura */
+      this._currentDefault = file.name;
+      this._renderList();
+      const label = this._el('dbDefaultCurrentLabel');
+      if (label) label.innerHTML = `<i class="bi bi-star-fill me-1"></i>Predeterminado actual: <strong>${file.name}</strong>`;
+
+      /* Carga el archivo en el dashboard de inmediato, sin necesidad de
+         pasarlo antes por el Historial (fire-and-forget: no bloquea ni
+         condiciona el resultado de haberlo marcado como predeterminado) */
+      AutoLoadEngine.loadFileByName(file.name).then(ok => {
+        if (ok) AuthEngine._toast(`"${file.name}" cargado en el dashboard ✓`, 'success');
+      });
+
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+      alert(`No se pudo establecer "${file.name}" como predeterminado:\n${err.message}`);
+    }
+  },
+
+  init() {
+    this._el('btnAbrirDbDefault')?.addEventListener('click', () => this._openTokenModal());
+    this._el('btnDbTokenConfirm')?.addEventListener('click', () => this._confirmToken());
+
+    this._el('btnDbTokenToggle')?.addEventListener('click', () => {
+      const input = this._el('dbTokenInput');
+      const icon  = this._el('dbTokenToggleIcon');
+      if (!input) return;
+      const isPass = input.type === 'password';
+      input.type = isPass ? 'text' : 'password';
+      icon.className = isPass ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+
+    /* Permite confirmar con Enter dentro del input del token */
+    this._el('dbTokenInput')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') this._confirmToken();
+    });
+
+    /* Por seguridad: limpia el token de memoria y el campo al cerrar
+       cualquiera de los dos modales (nunca queda residuo en la app) */
+    this._el('modalDbToken')?.addEventListener('hidden.bs.modal', () => {
+      const input = this._el('dbTokenInput');
+      if (input) input.value = '';
+    });
+    this._el('modalDbDefault')?.addEventListener('hidden.bs.modal', () => {
+      this._sessionToken = '';
+    });
+
+    this._el('btnDbDefaultRetry')?.addEventListener('click', () => this.fetchFileList());
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   13.6 AUTO LOAD ENGINE — Carga automática del archivo predeterminado
+       Se dispara justo después de un login exitoso (ver SessionEngine).
+       Hace un fetch silencioso a config.json en la raíz del repo y,
+       si existe, descarga y carga ese archivo con el mismo flujo que
+       usa HistoryEngine._loadFile(), sin requerir token (lectura
+       pública de la API de contenidos de GitHub).
+──────────────────────────────────────────────────────────── */
+const AutoLoadEngine = {
+
+  GITHUB_CONTENTS_BASE: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/',
+
+  async loadDefaultFile() {
+    try {
+      /* Lee config.json de forma silenciosa (si no existe, no hace nada) */
+      const cfgRes = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
+        cache: 'no-store',
+        headers: { 'Accept': 'application/vnd.github.v3.raw' },
+      });
+      if (!cfgRes.ok) return;
+
+      const config   = await cfgRes.json().catch(() => null);
+      const fileName = config?.archivo_predeterminado;
+      if (!fileName) return;
+
+      await this.loadFileByName(fileName);
+    } catch (err) {
+      /* Nunca debe romper el flujo de login: solo se registra en consola */
+      console.error('[AutoLoadEngine] No se pudo autocargar el archivo predeterminado:', err);
+    }
+  },
+
+  /**
+   * Descarga y carga un archivo puntual de REPORTES/ en el dashboard
+   * (mismo flujo que HistoryEngine._loadFile). Reutilizable tanto desde
+   * loadDefaultFile() (al iniciar sesión) como desde DbDefaultEngine
+   * (al establecer un archivo como predeterminado, para reflejarlo de
+   * inmediato sin tener que pasar por el Historial).
+   *
+   * @param {string} fileName
+   * @returns {Promise<boolean>} true si se cargó correctamente
+   */
+  async loadFileByName(fileName) {
+    try {
+      /* 1) Obtiene la metadata del archivo (necesitamos su download_url) */
+      const fileRes = await fetch(
+        this.GITHUB_CONTENTS_BASE + 'REPORTES/' + encodeURIComponent(fileName),
+        { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } }
+      );
+      if (!fileRes.ok) return false;
+      const fileMeta = await fileRes.json();
+      if (!fileMeta.download_url) return false;
+
+      /* 2) Descarga y parsea el Excel */
+      const bufRes = await fetch(fileMeta.download_url);
+      if (!bufRes.ok) return false;
+      const buffer   = await bufRes.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+
+      DataStore.fileName = fileName;
+      ExcelParser.parse(workbook);
+
+      FilterEngine.populate(DataStore.rawMain);
+      UIController.refresh();
+      UIController.showDashboard();
+
+      const footerEl = document.getElementById('footerFile');
+      if (footerEl) footerEl.textContent = fileName;
+      const titleEl = document.getElementById('reportTitle');
+      if (titleEl) titleEl.textContent = DataStore.reportTitle || fileName;
+
+      return true;
+    } catch (err) {
+      console.error('[AutoLoadEngine] No se pudo cargar el archivo:', fileName, err);
+      return false;
+    }
+  },
+};
+
+
+
 document.addEventListener('DOMContentLoaded', () => {
   SessionEngine.init();
   ThemeEngine.init();
@@ -2951,6 +3366,7 @@ document.addEventListener('DOMContentLoaded', () => {
   CloudEngine.init();
   SaveEngine.init();
   DeleteEngine.init();
+  DbDefaultEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:
