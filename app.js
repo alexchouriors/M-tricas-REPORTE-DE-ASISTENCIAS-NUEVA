@@ -339,6 +339,40 @@ const ExcelParser = {
     DataStore.rawExcluidos = wsExcl      ? this.parseExcluidosSheet(wsExcl)    : [];
     DataStore.rawNuevoEx   = wsNuevoEx   ? this.parseNuevoExSheet(wsNuevoEx)   : [];
     DataStore.rawAntiguoEx = wsAntiguoEx ? this.parseAntiguoExSheet(wsAntiguoEx) : [];
+
+    /* ────────────────────────────────────────────────────────────
+       CONTROL DE ACCESO (RBAC) — Filtra los registros según el
+       "Grupo Ministerial" permitido para el usuario en sesión,
+       ANTES de que lleguen a FilterEngine/UIController/ChartEngine.
+
+       Se aplica aquí, en el único punto de entrada de TODO parseo
+       de Excel, para cubrir automáticamente:
+         • Carga manual/local (input de archivo / botón "Cargar Excel")
+         • Historial de GitHub (HistoryEngine)
+         • Auto-carga del archivo predeterminado (AutoLoadEngine)
+       sin tener que duplicar la llamada en cada uno de esos flujos.
+
+       window.AccessManager lo expone AccessManager.js (módulo ES6,
+       ver index.html). rawAntiguoEx no tiene campo `grupo` (esa hoja
+       no distingue por grupo ministerial), así que no se filtra: no
+       hay información suficiente para clasificarla con seguridad.
+    ──────────────────────────────────────────────────────────── */
+    if (window.AccessManager) {
+      const usuarioActivo = AuditEngine.getUser();
+      DataStore.rawMain      = window.AccessManager.applyFilter(DataStore.rawMain,      usuarioActivo);
+      DataStore.rawExcluidos = window.AccessManager.applyFilter(DataStore.rawExcluidos, usuarioActivo);
+      DataStore.rawNuevoEx   = window.AccessManager.applyFilter(DataStore.rawNuevoEx,   usuarioActivo);
+    } else {
+      /* FAIL-CLOSED: si el módulo RBAC no cargó (fallo de red, bloqueo
+         del <script type="module">, etc.), NO se debe mostrar el reporte
+         sin filtrar — eso sería otra vía de fail-open. Se vacían los
+         datos y se avisa por consola; el usuario verá un dashboard sin
+         registros en vez de datos que no le corresponden. */
+      console.error('[ExcelParser] AccessManager no disponible — filtro RBAC no aplicado. Se bloquean los datos por seguridad (fail-closed).');
+      DataStore.rawMain      = [];
+      DataStore.rawExcluidos = [];
+      DataStore.rawNuevoEx   = [];
+    }
   },
 };
 
