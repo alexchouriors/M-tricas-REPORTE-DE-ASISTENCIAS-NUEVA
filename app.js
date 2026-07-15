@@ -1939,6 +1939,10 @@ const SessionEngine = {
     supportBtn?.classList.add('d-none');
     sessionStorage.setItem(this.STORAGE_KEY, name);
 
+    /* Aplica los permisos de INTERFAZ (Usuario Rules.js) para el usuario
+       recién autenticado — no toca datos ni filtros RBAC (AccessManager) */
+    if (window.UsuarioRules) window.UsuarioRules.applyUIPermissions(name);
+
     /* Notificación de auditoría por Telegram (fire-and-forget) */
     if (typeof TelegramEngine !== 'undefined') {
       TelegramEngine.notifySession('login', name)
@@ -2074,6 +2078,9 @@ const SessionEngine = {
     if (this.isLoggedIn()) {
       this.hideOverlayInstant();
       this._updateSessionUI(this.getUser());
+      /* Restaura los permisos de INTERFAZ (Usuario Rules.js) para el
+         usuario ya autenticado — no afecta datos ni filtros RBAC */
+      if (window.UsuarioRules) window.UsuarioRules.applyUIPermissions(this.getUser());
     } else {
       this.showOverlay();
     }
