@@ -5,7 +5,24 @@
    Estrategia: Stale-While-Revalidate
 ================================================================ */
 
-const CACHE_NAME = 'metricas-v10';
+const CACHE_NAME = 'metricas-v12';
+
+/* Archivos de ROLES/PERMISOS (RBAC): cambian cada vez que se guarda
+   algo desde el Panel de Control de Permisos (Usuario Rules.js) o se
+   edita USUARIOS.JS/SecurityConfig.js/AccessManager.js manualmente.
+   NUNCA deben servirse desde caché — ver _fetch handler más abajo,
+   que los intercepta ANTES de la lógica de Stale-While-Revalidate. */
+const RBAC_FILES = [
+  'USUARIOS.JS',
+  'SecurityConfig.js',
+  'AccessManager.js',
+  'Usuario Rules.js',
+];
+
+function isRbacFile(url) {
+  const path = decodeURIComponent(url.pathname);
+  return RBAC_FILES.some(name => path === '/' + name || path.endsWith('/' + name));
+}
 
 /* Archivos pre-cacheados en la instalación.
    Las rutas son absolutas desde la raíz del sitio porque el scope es '/'. */
@@ -44,6 +61,21 @@ self.addEventListener('activate', event => {
 */
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+
+  /* ── Archivos RBAC: network-only, jamás caché ──
+     Se sirven directo de la red con cache:'no-store'. Si la red
+     falla (offline), como último recurso se intenta el caché para
+     no dejar la app completamente rota, pero NUNCA se escribe una
+     copia nueva en caché desde aquí — así se garantiza que un
+     cambio de permisos/roles se refleje de inmediato en la próxima
+     carga, sin depender de que Stale-While-Revalidate ya haya
+     revalidado en segundo plano. */
+  if (isRbacFile(url) && event.request.method === 'GET') {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
   const isExternal =
     url.hostname.includes('api.github.com')       ||

@@ -202,11 +202,17 @@
         <i class="bi bi-trash-fill"></i>Eliminar
       </button>
 
-      <!-- Base de Datos (Beta) — solicita token de GitHub en cada uso (nunca se guarda) -->
+      <!-- Base de Datos — solicita token de GitHub en cada uso (nunca se guarda) -->
       <button type="button" class="btn-menu-dbdefault" id="btnAbrirDbDefault"
               data-bs-dismiss="offcanvas">
         <i class="bi bi-database-fill-gear"></i>Base de Datos
-        <span class="badge-beta-db ms-1">(Beta)</span>
+      </button>
+
+      <!-- Permisos (NUEVO) — solo visible/clickeable para MAESTRO; oculto por
+           UsuarioRules.applyUIPermissions() para cualquier otro rol -->
+      <button type="button" class="btn-menu-permisos d-none" id="btnAbrirPermisos"
+              data-bs-dismiss="offcanvas">
+        <i class="bi bi-shield-lock-fill"></i>Permisos
       </button>
 
       <!-- Historial (activo) -->
@@ -1208,12 +1214,105 @@
   </div>
 </div>
 
+<!-- ============================================================
+     MODAL — TOKEN EFÍMERO PARA "PERMISOS"
+     Se pide: (a) al degradar a un MAESTRO, (b) al guardar cambios.
+     Nunca se lee ni se guarda en localStorage — solo en memoria
+     (PermisosEngine._sessionToken) durante esta sesión del modal.
+============================================================ -->
+<div class="modal fade" id="modalPermisosToken" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-content auth-modal-content">
+
+      <div class="auth-modal-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-shield-lock auth-modal-icon"></i>
+          <div>
+            <div class="auth-modal-title">Token de GitHub requerido</div>
+            <div class="auth-modal-sub">Acción crítica sobre Permisos — se valida en cada uso, no se guarda</div>
+          </div>
+        </div>
+        <button type="button" class="auth-modal-close" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="auth-modal-body">
+        <div class="auth-hint mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Este token se valida contra la API de GitHub y se usa solo en memoria durante esta sesión; nunca se guarda en caché ni en localStorage.
+        </div>
+
+        <label class="auth-label">Personal Access Token</label>
+        <div class="auth-input-row">
+          <input type="password" id="permisosTokenInput" class="auth-input"
+                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                 autocomplete="off" spellcheck="false" />
+          <button class="auth-toggle-btn" id="btnPermisosTokenToggle" title="Mostrar / Ocultar">
+            <i class="bi bi-eye" id="permisosTokenToggleIcon"></i>
+          </button>
+        </div>
+
+        <div id="permisosTokenModalError" class="auth-modal-error d-none"></div>
+
+        <div class="auth-modal-actions">
+          <button class="btn-auth-save" id="btnPermisosTokenConfirm" style="margin-left:auto">
+            <i class="bi bi-check2 me-1"></i>Confirmar y continuar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL — PANEL DE CONTROL DE PERMISOS
+============================================================ -->
+<div class="modal fade" id="modalPermisos" tabindex="-1" aria-labelledby="modalPermisosLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header dash-modal-header">
+        <h5 class="modal-title dash-modal-title" id="modalPermisosLabel">
+          <i class="bi bi-shield-lock-fill me-2" style="color:#f0b429"></i>Panel de Control de Permisos
+        </h5>
+        <button type="button" class="dash-modal-close" data-bs-dismiss="modal" aria-label="Cerrar">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body dash-modal-body">
+
+        <div class="dash-info-box mb-3">
+          <div class="dash-info-content">
+            <div><i class="bi bi-info-circle-fill me-2"></i>Cambia la etiqueta de cada usuario. Degradar a un <strong>MAESTRO</strong> exige validar un token de GitHub.</div>
+            <div>Los cambios quedan en memoria hasta presionar <strong>"Guardar cambios en GitHub"</strong>.</div>
+          </div>
+        </div>
+
+        <div id="listaPermisosContainer" class="permisos-list"></div>
+
+        <div class="d-flex justify-content-end mt-3">
+          <button type="button" class="btn-set-default" id="btnPermisosGuardar">
+            <i class="bi bi-cloud-arrow-up-fill me-1"></i>Guardar cambios en GitHub
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 
 <!-- App JS -->
 <script src="TelegramEngine.js"></script>
 <script src="USUARIOS.JS"></script>
-<!-- Control de Acceso (RBAC) — scripts clásicos, igual que USUARIOS.JS -->
+<!-- Control de Acceso (RBAC) — scripts clásicos, igual que USUARIOS.JS.
+     La frescura de estos 4 archivos (nunca servir una copia vieja tras
+     un cambio de permisos) la garantiza sw.js, que los intercepta como
+     network-only ANTES de su lógica de Stale-While-Revalidate — no
+     hace falta ningún truco de cache-busting aquí en el HTML. -->
 <script src="SecurityConfig.js"></script>
 <script src="AccessManager.js"></script>
 <script src="Usuario Rules.js"></script>

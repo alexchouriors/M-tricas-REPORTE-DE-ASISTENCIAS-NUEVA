@@ -384,37 +384,70 @@ const ExcelParser = {
 ──────────────────────────────────────────────────────────── */
 const KPIEngine = {
 
+  /* ── Predicados puros por métrica ──
+     Única fuente de verdad: compute() los usa para CONTAR y
+     getRecordsByMetric() los usa para LISTAR. Así el número que se ve
+     en la tarjeta y los nombres que se ven en el modal de detalle
+     nunca pueden desincronizarse entre sí. */
+  metricPredicates: {
+    total:          () => true,
+    celulasSI:      r => r.celula === 'SI',
+    celulasNO:      r => r.celula === 'NO',
+    servicioSI:     r => r.servicio === 'SI',
+    servicioNO:     r => r.servicio === 'NO',
+    ambosSI:        r => r.celula === 'SI' && r.servicio === 'SI',
+    ambosNO:        r => r.celula === 'NO' && r.servicio === 'NO',
+    nuevosCelula:   r => !!r.esNuevoCelula,
+    nuevosServicio: r => !!r.esNuevoServicio,
+  },
+
+  /**
+   * Devuelve el subconjunto de `records` que conforma la métrica
+   * indicada (mismo criterio exacto que compute()). Es una función
+   * de solo lectura: no muta `records` ni ningún estado de DataStore.
+   *
+   * @param {Array<Object>} records - Normalmente el mismo array ya
+   *   filtrado que se le pasa a compute() (post AccessManager + filtros UI)
+   * @param {string} metricKey - Una de las claves de `metricPredicates`
+   * @returns {Array<Object>} Registros que cumplen la métrica
+   */
+  getRecordsByMetric(records, metricKey) {
+    if (!Array.isArray(records)) return [];
+    const predicate = this.metricPredicates[metricKey];
+    if (typeof predicate !== 'function') {
+      console.warn(`[KPIEngine] Métrica desconocida: "${metricKey}"`);
+      return [];
+    }
+    return records.filter(predicate);
+  },
+
   /* Calcula todos los KPIs sobre los registros filtrados */
   compute(records) {
     const total = records.length;
 
     // Asistencia célula
-    const celulasSI   = records.filter(r => r.celula  === 'SI').length;
-    const celulasNO   = records.filter(r => r.celula  === 'NO').length;
+    const celulasSI   = records.filter(this.metricPredicates.celulasSI).length;
+    const celulasNO   = records.filter(this.metricPredicates.celulasNO).length;
     const celulasNUEVO = records.filter(r => r.celula === 'NUEVO').length;
 
     // Asistencia servicio
-    const servicioSI   = records.filter(r => r.servicio === 'SI').length;
-    const servicioNO   = records.filter(r => r.servicio === 'NO').length;
+    const servicioSI   = records.filter(this.metricPredicates.servicioSI).length;
+    const servicioNO   = records.filter(this.metricPredicates.servicioNO).length;
     const servicioNUEVO = records.filter(r => r.servicio === 'NUEVO').length;
 
     // Asistencia ambos — criterio EXACTO del Excel:
     // célula = 'SI' estricto  AND  servicio = 'SI' estricto
     // NUEVO *no* cuenta: un nuevo en servicio no asistió a célula y viceversa
-    const ambosSI = records.filter(r =>
-      r.celula === 'SI' && r.servicio === 'SI'
-    ).length;
+    const ambosSI = records.filter(this.metricPredicates.ambosSI).length;
 
     // Inasistencia total — ausente en ambos (NUEVO tampoco cuenta aquí)
-    const ambosNO = records.filter(r =>
-      r.celula === 'NO' && r.servicio === 'NO'
-    ).length;
+    const ambosNO = records.filter(this.metricPredicates.ambosNO).length;
 
     // ── Nuevos (usando los flags corregidos del parser) ──
     // esNuevoCelula   → Estado (col E) = 'NUEVO'  (nuevos integrados a célula)
     // esNuevoServicio → Célula (col C) = 'NUEVO'  (nuevos que llegaron al servicio)
-    const nuevosCelula   = records.filter(r => r.esNuevoCelula).length;
-    const nuevosServicio = records.filter(r => r.esNuevoServicio).length;
+    const nuevosCelula   = records.filter(this.metricPredicates.nuevosCelula).length;
+    const nuevosServicio = records.filter(this.metricPredicates.nuevosServicio).length;
     const totalNuevos    = records.filter(r => r.esNuevo).length;
 
     // Porcentajes (seguros ante división por cero)
@@ -479,6 +512,288 @@ const KPIEngine = {
     return groups;
   },
 };
+
+
+/* ────────────────────────────────────────────────────────────
+   MAPA DE TARJETAS KPI CLICKEABLES → MÉTRICA + TÍTULO DEL MODAL
+   ────────────────────────────────────────────────────────────
+   Cada entrada vincula el id del <div class="kpi-value" id="..."> ya
+   existente en index.html con la clave de KPIEngine.metricPredicates
+   y el título legible que se muestra en el encabezado del modal.
+   Las tarjetas de porcentaje (kpiPctGeneral/Celula/Servicio) NO están
+   aquí a propósito: no representan una lista de personas 1-a-1.
+──────────────────────────────────────────────────────────── */
+const KPI_DETAIL_MAP = {
+  kpiTotal:          { metric: 'total',          title: 'Total Registrados' },
+  kpiCelulasSI:      { metric: 'celulasSI',       title: 'Asistencia a Célula' },
+  kpiCelulasNO:      { metric: 'celulasNO',       title: 'Inasistencia a Célula' },
+  kpiServicioSI:     { metric: 'servicioSI',      title: 'Asistencia a Servicio' },
+  kpiServicioNO:     { metric: 'servicioNO',      title: 'Inasistencia a Servicio' },
+  kpiAmbosSI:        { metric: 'ambosSI',         title: 'Asistió a Ambos' },
+  kpiAmbosNO:        { metric: 'ambosNO',         title: 'Ausentes en Ambos' },
+  kpiNuevosCelula:   { metric: 'nuevosCelula',    title: 'Nuevos en Célula' },
+  kpiNuevosServicio: { metric: 'nuevosServicio',  title: 'Nuevos en Servicio' },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   MODAL ENGINE — popup de detalle de personas por tarjeta KPI
+   ────────────────────────────────────────────────────────────
+   Módulo independiente y de solo-DOM: no calcula nada por su cuenta,
+   solo recibe (título, lista de registros) y los pinta. La lista de
+   registros SIEMPRE llega ya calculada por KPIEngine.getRecordsByMetric()
+   sobre el mismo array filtrado que usa el resto del dashboard, así que
+   nunca puede desincronizarse ni exponer datos fuera del alcance del
+   usuario en sesión (AccessManager ya se aplicó antes, en DataStore).
+
+   Se inyecta en el DOM una sola vez (lazy init) y se reutiliza en
+   cada apertura, igual que el resto de overlays del proyecto.
+──────────────────────────────────────────────────────────── */
+const ModalEngine = {
+
+  _initialized: false,
+  _closeTimeout: null,
+
+  /* Estado de la apertura actual (se resetea en cada open()) */
+  _currentTitle: '',
+  _currentPersonas: [],   // [{ nombre, grupo }], siempre ordenado por nombre
+  _searchQuery: '',
+  _groupMode: false,      // true = agrupado por "grupo", false = lista plana
+
+  /* Crea el markup del modal una sola vez y lo agrega a <body> */
+  _ensureBuilt() {
+    if (this._initialized) return;
+
+    const backdrop = document.createElement('div');
+    backdrop.id = 'kpiDetailModal';
+    backdrop.className = 'kpi-modal-backdrop d-none';
+    backdrop.innerHTML = `
+      <div class="kpi-modal" role="dialog" aria-modal="true" aria-labelledby="kpiModalTitle">
+        <div class="kpi-modal-header">
+          <div class="kpi-modal-heading">
+            <h3 class="kpi-modal-title" id="kpiModalTitle"></h3>
+            <span class="kpi-modal-count" id="kpiModalCount"></span>
+          </div>
+          <button type="button" class="kpi-modal-close" id="kpiModalClose" aria-label="Cerrar">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+        <div class="kpi-modal-toolbar">
+          <div class="kpi-modal-search">
+            <i class="bi bi-search"></i>
+            <input type="text" id="kpiModalSearch" placeholder="Buscar por nombre o grupo..." autocomplete="off" />
+          </div>
+          <button type="button" class="kpi-modal-group-toggle" id="kpiModalGroupToggle"
+                  title="Organizar por grupo" aria-pressed="false">
+            <i class="bi bi-diagram-3"></i>
+            <span>Agrupar</span>
+          </button>
+        </div>
+        <div class="kpi-modal-body">
+          <ul class="kpi-modal-list" id="kpiModalList"></ul>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+
+    // Cierra al hacer clic fuera del cuadro (sobre el backdrop)
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) this.close();
+    });
+
+    // Cierra con el botón "X"
+    backdrop.querySelector('#kpiModalClose')?.addEventListener('click', () => this.close());
+
+    // Cierra con la tecla Escape, solo si el modal está visible
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && backdrop.classList.contains('kpi-modal-visible')) this.close();
+    });
+
+    // Buscador: filtra en vivo por nombre o grupo (sin distinguir acentos/mayúsculas)
+    backdrop.querySelector('#kpiModalSearch')?.addEventListener('input', (e) => {
+      this._searchQuery = e.target.value;
+      this._render();
+    });
+
+    // Toggle "Agrupar": reorganiza la lista por grupo ministerial
+    const groupToggle = backdrop.querySelector('#kpiModalGroupToggle');
+    groupToggle?.addEventListener('click', () => {
+      this._groupMode = !this._groupMode;
+      groupToggle.classList.toggle('kpi-modal-toggle-active', this._groupMode);
+      groupToggle.setAttribute('aria-pressed', String(this._groupMode));
+      this._render();
+    });
+
+    this._initialized = true;
+  },
+
+  /* Normaliza texto para buscar sin sensibilidad a acentos/mayúsculas */
+  _normalizeSearch(str) {
+    return (str || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  },
+
+  /**
+   * Abre el modal mostrando la lista de nombres de `records`.
+   * @param {string} title - Título legible (ej. "Asistencia a Célula")
+   * @param {Array<Object>} records - Registros a listar (deben tener `.nombre`)
+   */
+  open(title, records) {
+    this._ensureBuilt();
+    clearTimeout(this._closeTimeout);
+
+    const backdrop = document.getElementById('kpiDetailModal');
+    const titleEl  = document.getElementById('kpiModalTitle');
+    if (!backdrop || !titleEl) return; // fail-safe visual
+
+    this._currentTitle = title;
+    this._currentPersonas = (Array.isArray(records) ? records : [])
+      .map(r => ({
+        nombre: (r && r.nombre) ? String(r.nombre).trim() : '',
+        grupo:  (r && r.grupo)  ? String(r.grupo).trim()  : '',
+      }))
+      .filter(p => p.nombre !== '')
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+
+    // Reinicia buscador y modo de agrupación en cada apertura
+    this._searchQuery = '';
+    this._groupMode = false;
+    const searchInput = document.getElementById('kpiModalSearch');
+    if (searchInput) searchInput.value = '';
+    const groupToggle = document.getElementById('kpiModalGroupToggle');
+    if (groupToggle) {
+      groupToggle.classList.remove('kpi-modal-toggle-active');
+      groupToggle.setAttribute('aria-pressed', 'false');
+    }
+
+    titleEl.textContent = title;
+    this._render();
+
+    backdrop.classList.remove('d-none');
+    // Fuerza reflow antes de agregar la clase de transición (fade + scale-in)
+    void backdrop.offsetWidth;
+    backdrop.classList.add('kpi-modal-visible');
+    document.body.classList.add('kpi-modal-open'); // bloquea el scroll de fondo
+  },
+
+  /**
+   * Vuelve a pintar la lista a partir de `_currentPersonas`, aplicando el
+   * texto de búsqueda actual y el modo de organización (plano o agrupado
+   * por "grupo"). Se llama en open() y cada vez que cambia la búsqueda
+   * o el toggle de agrupar, sin volver a tocar KPIEngine/DataStore.
+   */
+  _render() {
+    const listEl  = document.getElementById('kpiModalList');
+    const countEl = document.getElementById('kpiModalCount');
+    if (!listEl || !countEl) return;
+
+    const query = this._normalizeSearch(this._searchQuery);
+    const personas = query === ''
+      ? this._currentPersonas
+      : this._currentPersonas.filter(p =>
+          this._normalizeSearch(p.nombre).includes(query) ||
+          this._normalizeSearch(p.grupo).includes(query)
+        );
+
+    const total = this._currentPersonas.length;
+    const shown = personas.length;
+    countEl.textContent = (shown === total)
+      ? `${total} persona${total === 1 ? '' : 's'}`
+      : `${shown} de ${total} persona${total === 1 ? '' : 's'}`;
+
+    listEl.innerHTML = '';
+
+    if (personas.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'kpi-modal-empty';
+      li.textContent = this._searchQuery.trim() !== ''
+        ? 'Ninguna persona coincide con la búsqueda.'
+        : 'No hay personas registradas en esta categoría.';
+      listEl.appendChild(li);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+
+    if (this._groupMode) {
+      // Agrupa por "grupo" (sin duplicar el nombre del grupo en cada fila),
+      // ordenando los grupos alfabéticamente y, dentro de cada uno, por nombre
+      const grupos = new Map();
+      personas.forEach(p => {
+        const key = p.grupo !== '' ? p.grupo : 'Sin grupo asignado';
+        if (!grupos.has(key)) grupos.set(key, []);
+        grupos.get(key).push(p);
+      });
+
+      const clavesOrdenadas = Array.from(grupos.keys())
+        .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+      let contador = 1;
+      clavesOrdenadas.forEach(key => {
+        const personasDelGrupo = grupos.get(key);
+
+        const header = document.createElement('li');
+        header.className = 'kpi-modal-group-header';
+        header.textContent = `${key} (${personasDelGrupo.length})`;
+        frag.appendChild(header);
+
+        personasDelGrupo.forEach(p => {
+          frag.appendChild(this._buildItem(p, contador++, { mostrarGrupo: false }));
+        });
+      });
+    } else {
+      // Lista plana ordenada por nombre, mostrando el grupo junto al nombre
+      personas.forEach((p, i) => {
+        frag.appendChild(this._buildItem(p, i + 1, { mostrarGrupo: true }));
+      });
+    }
+
+    listEl.appendChild(frag);
+  },
+
+  /* Construye un <li> de persona; `mostrarGrupo` oculta el grupo cuando
+     ya se muestra como encabezado (modo agrupado). */
+  _buildItem(persona, index, { mostrarGrupo }) {
+    const li = document.createElement('li');
+    li.className = 'kpi-modal-item';
+
+    const badge = document.createElement('span');
+    badge.className = 'kpi-modal-item-index';
+    badge.textContent = String(index);
+    li.appendChild(badge);
+
+    const name = document.createElement('span');
+    name.className = 'kpi-modal-item-name';
+    name.textContent = persona.nombre; // textContent: nunca interpreta HTML
+    li.appendChild(name);
+
+    if (mostrarGrupo && persona.grupo !== '') {
+      const group = document.createElement('span');
+      group.className = 'kpi-modal-item-group';
+      group.textContent = `— ${persona.grupo}`;
+      li.appendChild(group);
+    }
+
+    return li;
+  },
+
+  /* Cierra el modal con una pequeña transición de salida */
+  close() {
+    const backdrop = document.getElementById('kpiDetailModal');
+    if (!backdrop) return;
+
+    backdrop.classList.remove('kpi-modal-visible');
+    document.body.classList.remove('kpi-modal-open');
+    clearTimeout(this._closeTimeout);
+    this._closeTimeout = setTimeout(() => backdrop.classList.add('d-none'), 250);
+  },
+};
+window.ModalEngine = ModalEngine;
+
+
 
 
 /* ────────────────────────────────────────────────────────────
@@ -1010,6 +1325,9 @@ const UIController = {
 
   /* Inicializa el controlador y vincula eventos */
   init() {
+    // Vincula el clic en las tarjetas KPI al modal de detalle de personas
+    this.bindKPICardClicks();
+
     // Cargar archivo
     document.getElementById('fileInput')?.addEventListener('change', e => {
       const file = e.target.files[0];
@@ -1114,10 +1432,51 @@ const UIController = {
     const filtered = DataStore.applyFilters(active);
     const kpis     = KPIEngine.compute(filtered);
 
+    /* Guarda el último conjunto filtrado para que el modal de detalle
+       de las tarjetas KPI (bindKPICardClicks) siempre liste exactamente
+       las mismas personas que están detrás de los números mostrados,
+       sin tener que recalcular filtros por su cuenta. */
+    this._lastFilteredRecords = filtered;
+
     this.updateKPICards(kpis);
     ChartEngine.renderAll(kpis);
     TableEngine.renderAll(filtered);
     AbsenceEngine.render(filtered);  // Monitor de ausencias
+  },
+
+  /**
+   * Hace clickeables las tarjetas de KPI declaradas en KPI_DETAIL_MAP:
+   * al hacer clic, abre ModalEngine con el título de la métrica y la
+   * lista de personas que la conforman (KPIEngine.getRecordsByMetric
+   * sobre el último array ya filtrado — respeta AccessManager y los
+   * filtros activos de la UI). Se llama una sola vez desde init().
+   */
+  bindKPICardClicks() {
+    Object.entries(KPI_DETAIL_MAP).forEach(([valueId, { metric, title }]) => {
+      const valueEl = document.getElementById(valueId);
+      const cardEl  = valueEl?.closest('.kpi-card');
+      if (!cardEl) return; // Fail-safe visual: la tarjeta no existe en esta vista
+
+      cardEl.classList.add('kpi-card-clickable');
+      cardEl.setAttribute('role', 'button');
+      cardEl.setAttribute('tabindex', '0');
+      cardEl.setAttribute('aria-label', `Ver personas: ${title}`);
+
+      const abrirDetalle = () => {
+        const records = this._lastFilteredRecords || [];
+        const subset  = KPIEngine.getRecordsByMetric(records, metric);
+        if (window.ModalEngine) window.ModalEngine.open(title, subset);
+      };
+
+      cardEl.addEventListener('click', abrirDetalle);
+      // Accesibilidad: también abre con Enter/Espacio si la tarjeta tiene foco
+      cardEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          abrirDetalle();
+        }
+      });
+    });
   },
 
   /* Actualiza los valores en los cards de KPI */
@@ -3262,6 +3621,10 @@ const DbDefaultEngine = {
 
       AuthEngine._toast(`"${file.name}" establecido como predeterminado ✓`, 'success');
 
+      /* Notificación de auditoría por Telegram (fire-and-forget) */
+      TelegramEngine.notifyDefaultFileChange(AuditEngine.getUser(), file.name)
+        .catch(err => console.error('[DbDefaultEngine] Error al notificar cambio de predeterminado:', err));
+
       /* Refleja de inmediato el nuevo predeterminado en la UI del modal
          (banner + badge en la lista), sin esperar a la próxima apertura */
       this._currentDefault = file.name;
@@ -3316,7 +3679,287 @@ const DbDefaultEngine = {
 
 
 /* ────────────────────────────────────────────────────────────
-   13.6 AUTO LOAD ENGINE — Carga automática del archivo predeterminado
+   13.6 PERMISOS ENGINE — Panel de Control de Permisos
+       Solo MAESTRO puede abrirlo (gateado también por
+       UsuarioRules vía PERMISOS.GESTIONAR_PERMISOS). Reconstruye
+       "Usuario Rules.js" y hace commit del USER_ROLE_MAP vía la
+       API de GitHub. El token SOLO vive en memoria durante la
+       sesión del modal — nunca en localStorage/sessionStorage.
+──────────────────────────────────────────────────────────── */
+const PermisosEngine = {
+
+  GITHUB_REPO_API:     'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA',
+  RULES_FILE_PATH:     'Usuario Rules.js',
+  ROLES: ['MAESTRO', 'EDITOR', 'LECTOR'],
+
+  _pending: {},              // { usuario: nuevoRol } — cambios aún no guardados en GitHub
+  _sessionToken: '',         // Solo en memoria; se pide de nuevo cada vez que se abre el panel
+  _pendingCriticalChange: null,
+  _pendingSaveAfterToken: false,
+
+  _el(id) { return document.getElementById(id); },
+
+  /* ── Rol MAESTRO del usuario en sesión (para gatear el panel) ── */
+  isMaestro(usuario) {
+    return window.UsuarioRules ? window.UsuarioRules._resolveRole(usuario) === 'MAESTRO' : false;
+  },
+
+  _currentRole(user) {
+    if (Object.prototype.hasOwnProperty.call(this._pending, user)) return this._pending[user];
+    return (window.USER_ROLE_MAP && window.USER_ROLE_MAP[user]) || window.DEFAULT_ROLE || 'LECTOR';
+  },
+
+  /* ── Abre el panel (doble verificación además del gateo visual) ── */
+  open() {
+    const usuarioActual = AuditEngine.getUser();
+    if (!this.isMaestro(usuarioActual)) return; // fail-closed, aunque el botón ya esté oculto
+
+    this._pending = {};
+    this._sessionToken = '';
+    this._render(usuarioActual);
+    this._modalRef = this._modalRef || new bootstrap.Modal(this._el('modalPermisos'));
+    this._modalRef.show();
+  },
+
+  _render(usuarioActual) {
+    const listEl = this._el('listaPermisosContainer');
+    if (!listEl || typeof USUARIOS_REGISTRADOS === 'undefined') return;
+
+    const actualNorm = (usuarioActual || '').toString().trim().toUpperCase();
+    listEl.innerHTML = '';
+
+    USUARIOS_REGISTRADOS.forEach(user => {
+      const role = this._currentRole(user);
+      const isSelf = user.toString().trim().toUpperCase() === actualNorm;
+
+      const row = document.createElement('div');
+      row.className = 'permisos-row' + (role === 'MAESTRO' ? ' is-maestro' : '');
+      row.innerHTML = `
+        <span class="permisos-user">${user}</span>
+        <select class="permisos-select" data-user="${user}" ${isSelf ? 'disabled title="No puedes cambiar tu propio rol desde aquí"' : ''}>
+          ${this.ROLES.map(r => `<option value="${r}" ${r === role ? 'selected' : ''}>${r}</option>`).join('')}
+        </select>`;
+
+      listEl.appendChild(row);
+      const select = row.querySelector('select');
+      if (!isSelf) select.addEventListener('change', e => this._onRoleChange(user, e.target));
+    });
+  },
+
+  /* ── Regla jerárquica: degradar a un MAESTRO exige token ── */
+  _onRoleChange(user, selectEl) {
+    const oldRole = this._currentRole(user);
+    const newRole = selectEl.value;
+    if (oldRole === newRole) return;
+
+    if (oldRole === 'MAESTRO' && newRole !== 'MAESTRO') {
+      selectEl.value = oldRole; // revierte visualmente hasta validar el token
+      this._pendingCriticalChange = { user, newRole, selectEl };
+      this._openTokenModal();
+      return;
+    }
+
+    this._pending[user] = newRole;
+    AuthEngine._toast(`"${user}" → ${newRole} (pendiente de guardar)`, 'info');
+  },
+
+  /* ── Modal de token ── */
+  _openTokenModal() {
+    this._el('permisosTokenInput').value = '';
+    this._setTokenError('');
+    this._tokenModalRef = this._tokenModalRef || new bootstrap.Modal(this._el('modalPermisosToken'));
+    this._tokenModalRef.show();
+  },
+
+  _setTokenError(msg) {
+    const el = this._el('permisosTokenModalError');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle('d-none', !msg);
+  },
+
+  async _confirmToken() {
+    const val = this._el('permisosTokenInput')?.value.trim() || '';
+    if (!val) { this._setTokenError('El token no puede estar vacío.'); return; }
+
+    const btn = this._el('btnPermisosTokenConfirm');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+
+    const valid = await this._validateToken(val);
+
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Confirmar y continuar'; }
+
+    if (!valid) {
+      this._setTokenError('Token inválido o sin permisos de escritura sobre el repositorio.');
+      return;
+    }
+
+    /* Guardado SOLO en memoria (variable de instancia); nunca en
+       localStorage/sessionStorage. Se pide de nuevo en cada apertura
+       del panel de Permisos. */
+    this._sessionToken = val;
+    this._setTokenError('');
+    this._tokenModalRef?.hide();
+
+    if (this._pendingCriticalChange) {
+      const { user, newRole, selectEl } = this._pendingCriticalChange;
+      this._pending[user] = newRole;
+      selectEl.value = newRole;
+      this._pendingCriticalChange = null;
+      AuthEngine._toast(`Cambio crítico de "${user}" autorizado ✓ (pendiente de guardar)`, 'success');
+    }
+
+    if (this._pendingSaveAfterToken) {
+      this._pendingSaveAfterToken = false;
+      this._commit();
+    }
+  },
+
+  /* ── Verifica que el token sea válido y tenga permisos de escritura
+       sobre el repo (no solo que exista) ── */
+  async _validateToken(token) {
+    try {
+      const res = await fetch(this.GITHUB_REPO_API, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' },
+      });
+      if (!res.ok) return false;
+      const repo = await res.json();
+      return !!(repo.permissions && (repo.permissions.push || repo.permissions.admin));
+    } catch {
+      return false;
+    }
+  },
+
+  /* ── Botón "Guardar cambios en GitHub" ── */
+  _save() {
+    if (Object.keys(this._pending).length === 0) {
+      AuthEngine._toast('No hay cambios pendientes.', 'info');
+      return;
+    }
+    if (!this._sessionToken) {
+      this._pendingSaveAfterToken = true;
+      this._openTokenModal();
+      return;
+    }
+    this._commit();
+  },
+
+  /* ── Reconstruye USER_ROLE_MAP dentro del código fuente original ── */
+  _buildRoleMapSource() {
+    const merged = { ...window.USER_ROLE_MAP, ...this._pending };
+    const lines = Object.keys(merged).map(user => {
+      const key = /^[A-Z_][A-Z0-9_]*$/.test(user) ? user : `'${user.replace(/'/g, "\\'")}'`;
+      return `  ${key}: '${merged[user]}',`;
+    });
+    return `const USER_ROLE_MAP = {\n${lines.join('\n')}\n};`;
+  },
+
+  /* ── Lee "Usuario Rules.js" del repo, reemplaza el bloque
+       USER_ROLE_MAP y hace commit (PUT) con el token en memoria ── */
+  async _commit() {
+    const token = this._sessionToken;
+    const btnGuardar = this._el('btnPermisosGuardar');
+    if (btnGuardar) { btnGuardar.disabled = true; btnGuardar.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+
+    try {
+      const apiUrl = `${this.GITHUB_REPO_API}/contents/${encodeURIComponent(this.RULES_FILE_PATH)}`;
+
+      const getRes = await fetch(apiUrl, {
+        cache: 'no-store',
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' },
+      });
+      if (!getRes.ok) throw new Error(`No se pudo leer "${this.RULES_FILE_PATH}" (${getRes.status}).`);
+
+      const fileData = await getRes.json();
+      const sha = fileData.sha;
+      const originalContent = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
+
+      const blockRegex = /const USER_ROLE_MAP = \{[\s\S]*?\n\};/;
+      if (!blockRegex.test(originalContent)) {
+        throw new Error('No se encontró el bloque USER_ROLE_MAP en el archivo remoto — no se modificó nada.');
+      }
+
+      const newContent = originalContent.replace(blockRegex, this._buildRoleMapSource());
+      const base64Content = btoa(unescape(encodeURIComponent(newContent)));
+
+      const changedUsers = Object.keys(this._pending).join(', ');
+      const putRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: `Dashboard: Actualiza permisos (${changedUsers})`,
+          content: base64Content,
+          sha,
+        }),
+      });
+
+      if (!putRes.ok) {
+        const errData = await putRes.json().catch(() => ({}));
+        throw new Error(errData.message || `Error ${putRes.status}: ${putRes.statusText}`);
+      }
+
+      /* Refleja el cambio de inmediato en memoria (sin recargar) */
+      const adminUser = AuditEngine.getUser();
+      const cambios = { ...this._pending };
+
+      Object.assign(window.USER_ROLE_MAP, this._pending);
+      this._pending = {};
+      AuthEngine._toast('Permisos actualizados y guardados en GitHub ✓', 'success');
+
+      /* Notificación de auditoría por Telegram — una por cada usuario
+         cambiado (fire-and-forget) */
+      Object.entries(cambios).forEach(([targetUser, newRole]) => {
+        TelegramEngine.notifyPermissionChange(adminUser, targetUser, newRole)
+          .catch(err => console.error('[PermisosEngine] Error al notificar cambio de permiso:', err));
+      });
+
+      if (window.UsuarioRules) window.UsuarioRules.applyUIPermissions(adminUser);
+      this._render(adminUser);
+
+    } catch (err) {
+      alert(`No se pudieron guardar los permisos:\n${err.message}`);
+    } finally {
+      if (btnGuardar) { btnGuardar.disabled = false; btnGuardar.innerHTML = '<i class="bi bi-cloud-arrow-up-fill me-1"></i>Guardar cambios en GitHub'; }
+    }
+  },
+
+  init() {
+    this._el('btnAbrirPermisos')?.addEventListener('click', () => this.open());
+    this._el('btnPermisosGuardar')?.addEventListener('click', () => this._save());
+    this._el('btnPermisosTokenConfirm')?.addEventListener('click', () => this._confirmToken());
+
+    this._el('btnPermisosTokenToggle')?.addEventListener('click', () => {
+      const input = this._el('permisosTokenInput');
+      const icon  = this._el('permisosTokenToggleIcon');
+      if (!input) return;
+      const isPass = input.type === 'password';
+      input.type = isPass ? 'text' : 'password';
+      icon.className = isPass ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+
+    this._el('permisosTokenInput')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') this._confirmToken();
+    });
+
+    /* Por seguridad: limpia el token de memoria y el campo al cerrar
+       cualquiera de los dos modales (nunca queda residuo en la app) */
+    this._el('modalPermisosToken')?.addEventListener('hidden.bs.modal', () => {
+      const input = this._el('permisosTokenInput');
+      if (input) input.value = '';
+    });
+    this._el('modalPermisos')?.addEventListener('hidden.bs.modal', () => {
+      this._sessionToken = '';
+    });
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   13.7 AUTO LOAD ENGINE — Carga automática del archivo predeterminado
        Se dispara justo después de un login exitoso (ver SessionEngine).
        Hace un fetch silencioso a config.json en la raíz del repo y,
        si existe, descarga y carga ese archivo con el mismo flujo que
@@ -3408,6 +4051,7 @@ document.addEventListener('DOMContentLoaded', () => {
   SaveEngine.init();
   DeleteEngine.init();
   DbDefaultEngine.init();
+  PermisosEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:

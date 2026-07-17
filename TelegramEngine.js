@@ -223,4 +223,77 @@ const TelegramEngine = {
       return [];
     }
   },
+
+  /**
+   * Notifica el cambio del archivo predeterminado (botón "Base de Datos"),
+   * enviado únicamente al chat privado del bot.
+   *
+   * @param {string} user - Usuario que realizó el cambio
+   * @param {string} fileName - Nombre del nuevo archivo predeterminado
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifyDefaultFileChange(user, fileName) {
+    try {
+      const nombre  = this._escapeHtml(user);
+      const archivo = this._escapeHtml(fileName);
+      const now = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `🖥️ <b>ALERTA DE CAMBIO DE ARCHIVO PREDETERMINADO</b>\n\n`;
+      msg += `👤 <b>Usuario:</b> ${nombre}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n`;
+      msg += `🖥️ <b>NOMBRE DEL ARCHIVO:</b> ${archivo}\n\n`;
+      msg += `🔒 <i>Notificación de ajuste — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de archivo predeterminado no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifyDefaultFileChange():', err);
+      return [];
+    }
+  },
+
+  /**
+   * Notifica un cambio de permiso/rol realizado desde el Panel de Control
+   * de Permisos, enviado únicamente al chat privado del bot.
+   *
+   * @param {string} adminUser - Usuario MAESTRO que realizó el cambio
+   * @param {string} targetUser - Usuario al que se le cambió el permiso
+   * @param {string} newRole - Nuevo rol/permiso otorgado
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifyPermissionChange(adminUser, targetUser, newRole) {
+    try {
+      const admin  = this._escapeHtml(adminUser);
+      const target = this._escapeHtml(targetUser);
+      const rol    = this._escapeHtml(newRole);
+      const now = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `🖥️ <b>ALERTA DE CAMBIO DE PERMISOS</b>\n\n`;
+      msg += `👤 <b>USUARIO:</b> ${admin}\n`;
+      msg += `👤 <b>USUARIO AL CUAL SE LE CAMBIO:</b> ${target}\n`;
+      msg += `🔒 <b>PERMISO:</b> ${rol}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n\n`;
+      msg += `🔒 <i>Notificación de cambio de permisos — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de cambio de permisos no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifyPermissionChange():', err);
+      return [];
+    }
+  },
 };
