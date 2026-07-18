@@ -374,6 +374,56 @@ const ExcelParser = {
       DataStore.rawNuevoEx   = [];
     }
   },
+
+  /**
+   * Variante de solo-lectura de parse(): parsea un workbook y devuelve
+   * un objeto NUEVO { rawMain, rawExcluidos, rawNuevoEx } sin tocar
+   * DataStore en ningún momento — el reporte actualmente cargado en
+   * el dashboard queda intacto. Usada por ComparativaEngine para leer
+   * un archivo histórico sin sustituir el reporte activo.
+   *
+   * Aplica AccessManager.applyFilter() de forma OBLIGATORIA sobre
+   * rawMain, con el mismo criterio fail-closed que parse(): sin
+   * AccessManager disponible, rawMain se vacía por seguridad.
+   *
+   * @param {Object} workbook - Workbook ya leído por XLSX.read()
+   * @returns {{rawMain: Array, rawExcluidos: Array, rawNuevoEx: Array}}
+   */
+  parseStandalone(workbook) {
+    const sheetNames = workbook.SheetNames;
+
+    const find = (keyword) => {
+      const name = sheetNames.find(n =>
+        n.toLowerCase().includes(keyword.toLowerCase())
+      );
+      return name ? workbook.Sheets[name] : null;
+    };
+
+    const specialNames = ['excluidos', 'nuevo ex', 'antiguo ex', 'hoja', 'curri'];
+    const mainSheetName = sheetNames.find(n =>
+      !specialNames.some(s => n.toLowerCase().includes(s))
+    ) || sheetNames[0];
+
+    const wsMain    = workbook.Sheets[mainSheetName];
+    const wsExcl    = find('excluido');
+    const wsNuevoEx = find('nuevo ex');
+
+    let rawMain        = wsMain    ? this.parseMainSheet(wsMain)       : [];
+    const rawExcluidos = wsExcl    ? this.parseExcluidosSheet(wsExcl)  : [];
+    const rawNuevoEx   = wsNuevoEx ? this.parseNuevoExSheet(wsNuevoEx) : [];
+
+    /* Control de acceso OBLIGATORIO — mismo criterio fail-closed que
+       parse(): sin AccessManager disponible, no se muestra nada. */
+    if (window.AccessManager) {
+      const usuarioActivo = AuditEngine.getUser();
+      rawMain = window.AccessManager.applyFilter(rawMain, usuarioActivo);
+    } else {
+      console.error('[ExcelParser] AccessManager no disponible — comparativa histórica bloqueada por seguridad (fail-closed).');
+      rawMain = [];
+    }
+
+    return { rawMain, rawExcluidos, rawNuevoEx };
+  },
 };
 
 
@@ -510,6 +560,49 @@ const KPIEngine = {
       if (r.esNuevoServicio) g.nuevosSrv++;
     });
     return groups;
+  },
+
+  /**
+   * NUEVO — método aditivo, no reemplaza ni modifica compute().
+   * Calcula el delta (variación) entre dos snapshots de KPIs ya
+   * calculados por compute(): el "actual" (reporte cargado ahora
+   * mismo) y el "anterior" (línea base de tendencia elegida desde
+   * el Historial — ver TrendEngine). Usa la misma fórmula que la
+   * Comparativa Histórica: ((Actual - Anterior) / Anterior) * 100.
+   *
+   * @param {Object} kpisActual   - Resultado de compute() sobre el reporte activo
+   * @param {Object} kpisAnterior - Resultado de compute() sobre la línea base
+   * @returns {Object} { [metric]: { value, pct, direction, text } }
+   *   direction: 'up' | 'down' | 'flat'
+   *   text: cadena lista para mostrar, p. ej. "+12.5%", "-4%", "N/A"
+   */
+  computeDelta(kpisActual, kpisAnterior) {
+    /* Mismo set de métricas "de conteo" que ya usan las tarjetas
+       clickeables (KPI_DETAIL_MAP) — las de porcentaje (pctGeneral,
+       etc.) no aplican aquí porque no representan una cantidad de
+       personas 1-a-1. */
+    const metrics = Object.values(KPI_DETAIL_MAP).map(m => m.metric);
+    const deltas = {};
+
+    metrics.forEach(metric => {
+      const actual   = kpisActual?.[metric]   ?? 0;
+      const anterior = kpisAnterior?.[metric] ?? 0;
+
+      let pct = null;
+      if (anterior !== 0) {
+        pct = Math.round(((actual - anterior) / anterior) * 100 * 10) / 10;
+      } else if (actual === 0) {
+        pct = 0;
+      }
+      // anterior === 0 && actual !== 0 → pct queda en null ("N/A": crecimiento indefinido)
+
+      const direction = pct === null ? 'flat' : pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+      const text = pct === null ? 'N/A' : `${pct > 0 ? '+' : ''}${pct}%`;
+
+      deltas[metric] = { value: actual - anterior, pct, direction, text };
+    });
+
+    return deltas;
   },
 };
 
@@ -1439,6 +1532,7 @@ const UIController = {
     this._lastFilteredRecords = filtered;
 
     this.updateKPICards(kpis);
+    TrendEngine.render(kpis); // NUEVO — pinta flechas/% y sparklines si hay línea base activa
     ChartEngine.renderAll(kpis);
     TableEngine.renderAll(filtered);
     AbsenceEngine.render(filtered);  // Monitor de ausencias
@@ -2181,7 +2275,12 @@ const SessionEngine = {
     const nameStep = this._el('loginNameStep');
     if (nameStep) nameStep.classList.remove('login-name-step-visible');
     const input = this._el('loginNameInput');
-    if (input) input.value = '';
+    if (input) {
+      input.value = '';
+      input.type = 'password'; // Siempre vuelve a mostrarse enmascarado
+    }
+    const toggleIcon = this._el('loginNameToggleIcon');
+    if (toggleIcon) toggleIcon.className = 'bi bi-eye';
     this._el('loginNameError')?.classList.add('d-none');
     this._el('loginNameNotFoundError')?.classList.add('d-none');
     this._el('btnSolicitarSoporte')?.classList.add('d-none');
@@ -2453,6 +2552,18 @@ const SessionEngine = {
       if (e.key === 'Enter') this._confirmLogin();
     });
 
+    /* Alterna mostrar/ocultar el nombre escrito (type password <-> text).
+       Puramente visual: this._el('loginNameInput').value sigue
+       capturándose igual sin importar el `type` del input. */
+    this._el('btnToggleLoginName')?.addEventListener('click', () => {
+      const input = this._el('loginNameInput');
+      const icon  = this._el('loginNameToggleIcon');
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      if (icon) icon.className = isPassword ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+
     /* Flujo de soporte: usuario no encontrado en USUARIOS.JS */
     this._el('btnSolicitarSoporte')?.addEventListener('click', () => this._showSupportStep());
     this._el('btnEnviarSoporte')?.addEventListener('click', () => this._submitSupportRequest());
@@ -2603,6 +2714,12 @@ const HistoryEngine = {
           <button type="button" class="btn btn-sm btn-outline-primary btn-cargar-reporte" data-idx="${idx}">
             <i class="bi bi-cloud-arrow-down me-1"></i>Cargar al Dashboard
           </button>
+          <button type="button" class="btn btn-sm btn-outline-warning btn-comparar-reporte" data-idx="${idx}">
+            <i class="bi bi-bar-chart-line me-1"></i>Comparar
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-info btn-tendencia-reporte" data-idx="${idx}">
+            <i class="bi bi-graph-up-arrow me-1"></i>Tendencia
+          </button>
           <a class="btn btn-sm btn-outline-success" href="${file.download_url}" target="_blank" rel="noopener noreferrer">
             <i class="bi bi-download me-1"></i>Descargar
           </a>
@@ -2616,6 +2733,37 @@ const HistoryEngine = {
 
         AuditEngine.notify({ action: 'cargar', user, fileName: file.name });
         this._loadFile(file, item);
+      });
+
+      /* Botón "Comparar": genera la Comparativa Histórica SIN tocar el
+         reporte actualmente cargado en el dashboard (ver ComparativaEngine) */
+      item.querySelector('.btn-comparar-reporte').addEventListener('click', () => {
+        const user = AuditEngine.getUser();
+        if (!user) return; // Sin sesión activa: se aborta la acción
+
+        ComparativaEngine.compare(file);
+
+        /* Notificación de auditoría por Telegram (fire-and-forget) */
+        if (typeof TelegramEngine !== 'undefined') {
+          TelegramEngine.notifyFeatureUsed(user, 'Comparó sus datos.')
+            .catch(err => console.error('[HistoryEngine] Error al notificar uso de Comparar:', err));
+        }
+      });
+
+      /* Botón "Tendencia": fija este archivo como línea base de
+         tendencia para las flechas/% y sparklines de las tarjetas KPI
+         del dashboard principal (ver TrendEngine) */
+      item.querySelector('.btn-tendencia-reporte').addEventListener('click', () => {
+        const user = AuditEngine.getUser();
+        if (!user) return; // Sin sesión activa: se aborta la acción
+
+        TrendEngine.setBaseline(file);
+
+        /* Notificación de auditoría por Telegram (fire-and-forget) */
+        if (typeof TelegramEngine !== 'undefined') {
+          TelegramEngine.notifyFeatureUsed(user, 'Revisó su tendencia.')
+            .catch(err => console.error('[HistoryEngine] Error al notificar uso de Tendencia:', err));
+        }
       });
 
       /* Botón "Descargar": registra al usuario en sesión antes de permitir la descarga */
@@ -2718,6 +2866,347 @@ const HistoryEngine = {
         if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
       });
     });
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   10.5 COMPARATIVA ENGINE — Comparativa Histórica de KPIs
+       Descarga y parsea un archivo del historial de forma AISLADA
+       (ExcelParser.parseStandalone — ver arriba) sin sobrescribir
+       DataStore.rawMain ni ningún dato del reporte que el usuario
+       está viendo actualmente. El resultado siempre pasa por
+       AccessManager.applyFilter() antes de calcular ningún KPI.
+──────────────────────────────────────────────────────────── */
+const ComparativaEngine = {
+
+  _loading: false,
+  _modalRef: null,
+
+  _el(id) { return document.getElementById(id); },
+
+  /* ── Punto de entrada: botón "Comparar" de un item del historial ── */
+  async compare(file) {
+    if (this._loading) return;
+
+    if (!Array.isArray(DataStore.rawMain) || DataStore.rawMain.length === 0) {
+      alert('Primero carga un reporte en el dashboard antes de generar una comparativa histórica.');
+      return;
+    }
+
+    this._loading = true;
+    this._showLoading(file.name);
+
+    try {
+      const url = file.download_url;
+      if (!url) throw new Error('El archivo no tiene URL de descarga disponible.');
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status}).`);
+
+      const buffer   = await res.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+
+      /* Parseo AISLADO — no toca el reporte actualmente cargado.
+         Ya viene filtrado por AccessManager.applyFilter() (obligatorio
+         y fail-closed, ver ExcelParser.parseStandalone). */
+      const historico = ExcelParser.parseStandalone(workbook);
+
+      /* KPIs del reporte ACTUAL — mismos datos que ven las tarjetas en
+         pantalla ahora mismo (ya filtrados por RBAC + filtros de UI activos) */
+      const activeNow    = DataStore.applyFilters(DataStore.getActiveMain());
+      const kpisActual   = KPIEngine.compute(activeNow);
+      const kpisAnterior = KPIEngine.compute(historico.rawMain);
+
+      this._render(file.name, kpisActual, kpisAnterior);
+
+      const modalEl = this._el('modalComparativa');
+      if (modalEl) {
+        this._modalRef = this._modalRef || new bootstrap.Modal(modalEl);
+        this._modalRef.show();
+      }
+
+    } catch (err) {
+      alert(`No se pudo generar la comparativa histórica:\n${err.message}`);
+    } finally {
+      this._loading = false;
+      this._hideLoading();
+    }
+  },
+
+  /* ── Reutiliza el overlay de carga que ya usa "Cargar al Dashboard" ── */
+  _showLoading(fileName) {
+    const overlay = this._el('historyFileLoading');
+    const label   = this._el('historyFileLoadingName');
+    if (overlay) overlay.classList.remove('d-none');
+    if (label)   label.textContent = `Comparando contra "${fileName}"...`;
+  },
+
+  _hideLoading() {
+    const overlay = this._el('historyFileLoading');
+    if (overlay) overlay.classList.add('d-none');
+  },
+
+  /* ── Calcula la variación % con la fórmula solicitada, a salvo de
+       división por cero ── */
+  _calcVariacion(actual, anterior) {
+    if (anterior === 0) {
+      if (actual === 0) return { text: '0%', cls: 'comparativa-pct-neutral' };
+      return { text: 'N/A', cls: 'comparativa-pct-neutral' };
+    }
+    const variacion   = ((actual - anterior) / anterior) * 100;
+    const redondeado  = Math.round(variacion * 10) / 10;
+    const cls  = redondeado > 0 ? 'comparativa-pct-pos'
+               : redondeado < 0 ? 'comparativa-pct-neg'
+               : 'comparativa-pct-neutral';
+    const signo = redondeado > 0 ? '+' : '';
+    return { text: `${signo}${redondeado}%`, cls };
+  },
+
+  /* ── Pinta la tabla del modal ── */
+  _render(fileName, kpisActual, kpisAnterior) {
+    const subtitleEl = this._el('modalComparativaSubtitle');
+    if (subtitleEl) subtitleEl.textContent = `Reporte actual vs. "${fileName}"`;
+
+    const tbody = this._el('comparativaTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    /* Reutiliza KPI_DETAIL_MAP (misma fuente de verdad que el resto
+       del dashboard) para no duplicar nombres de métricas ni títulos */
+    Object.values(KPI_DETAIL_MAP).forEach(({ metric, title }) => {
+      const actual   = kpisActual[metric]   ?? 0;
+      const anterior = kpisAnterior[metric] ?? 0;
+      const { text, cls } = this._calcVariacion(actual, anterior);
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${title}</td>
+        <td class="text-center">${actual}</td>
+        <td class="text-center">${anterior}</td>
+        <td class="text-center"><span class="comparativa-pct-badge ${cls}">${text}</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   10.6 SPARKLINE ENGINE — mini-gráficos de 2 puntos (antes/ahora)
+       en las tarjetas KPI. Usa Chart.js (ya cargado por ChartEngine)
+       pero mantiene su PROPIO registro de instancias (`instances`),
+       separado de ChartEngine.instances, sobre canvases con id
+       distinto (`${valueId}Spark`) — cero colisión con los gráficos
+       grandes que ya gestiona ChartEngine.
+──────────────────────────────────────────────────────────── */
+const SparklineEngine = {
+
+  instances: {},
+
+  /* Dibuja o actualiza el sparkline de una tarjeta KPI */
+  render(valueId, anterior, actual, direction) {
+    const canvas = document.getElementById(`${valueId}Spark`);
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const color = direction === 'up'   ? '#22c55e'
+                : direction === 'down' ? '#ef4444'
+                :                        '#94a3b8';
+
+    if (this.instances[valueId]) {
+      const inst = this.instances[valueId];
+      inst.data.datasets[0].data = [anterior, actual];
+      inst.data.datasets[0].borderColor = color;
+      inst.data.datasets[0].pointBackgroundColor = color;
+      inst.update();
+      return;
+    }
+
+    this.instances[valueId] = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: ['Antes', 'Ahora'],
+        datasets: [{
+          data: [anterior, actual],
+          borderColor: color,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 3,
+          pointBackgroundColor: color,
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        layout: { padding: 2 },
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: {
+          x: { display: false },
+          y: { display: false },
+        },
+      },
+    });
+  },
+
+  /* Destruye una instancia puntual (la visibilidad la controla el
+     contenedor .kpi-trend-row, gestionado por TrendEngine) */
+  clear(valueId) {
+    const inst = this.instances[valueId];
+    if (inst) {
+      inst.destroy();
+      delete this.instances[valueId];
+    }
+  },
+
+  /* Oculta/destruye todas las instancias (al quitar la línea base) */
+  clearAll() {
+    Object.keys(this.instances).forEach(id => this.clear(id));
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   10.7 TREND ENGINE — Tendencia (▲/▼) en las tarjetas KPI del
+       Dashboard principal, EXTENDIENDO KPIEngine/DataStore/
+       HistoryEngine sin modificar su lógica existente:
+         • DataStore: solo se le agrega la propiedad
+           `comparisonBaseline` (no se toca ninguna función).
+         • KPIEngine: usa el nuevo método aditivo computeDelta().
+         • HistoryEngine: reutiliza su lista ya renderizada,
+           solo se le agregó el botón "Tendencia".
+       Reutiliza ExcelParser.parseStandalone() (ya existente,
+       creado para la Comparativa Histórica) para leer el archivo
+       elegido de forma AISLADA — nunca sustituye DataStore.rawMain,
+       el reporte activo del dashboard queda intacto.
+──────────────────────────────────────────────────────────── */
+const TrendEngine = {
+
+  _loading: false,
+
+  _el(id) { return document.getElementById(id); },
+
+  /* ── Fija un archivo del historial como línea base de tendencia ── */
+  async setBaseline(file) {
+    if (this._loading) return;
+    this._loading = true;
+
+    const overlay = this._el('historyFileLoading');
+    const label   = this._el('historyFileLoadingName');
+    if (overlay) overlay.classList.remove('d-none');
+    if (label)   label.textContent = `Estableciendo "${file.name}" como línea base de tendencia...`;
+
+    try {
+      const url = file.download_url;
+      if (!url) throw new Error('El archivo no tiene URL de descarga disponible.');
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status}).`);
+
+      const buffer   = await res.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+
+      /* Parseo AISLADO — no toca el reporte actualmente cargado.
+         Ya viene filtrado por AccessManager.applyFilter() (obligatorio
+         y fail-closed, ver ExcelParser.parseStandalone). */
+      const historico = ExcelParser.parseStandalone(workbook);
+
+      /* Única propiedad nueva en DataStore — no se modifica ninguna
+         función existente del motor, solo se le agrega este dato. */
+      DataStore.comparisonBaseline = { fileName: file.name, rawMain: historico.rawMain };
+
+      AuthEngine._toast(`Tendencia activa: comparando contra "${file.name}" ✓`, 'success');
+
+      /* Recalcula con el flujo normal — refresh() ya llama a
+         TrendEngine.render() como parte de su secuencia habitual */
+      UIController.refresh();
+
+      const modalEl = this._el('modalHistorial');
+      if (modalEl) {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+      }
+
+    } catch (err) {
+      alert(`No se pudo establecer la línea base de tendencia:\n${err.message}`);
+    } finally {
+      this._loading = false;
+      if (overlay) overlay.classList.add('d-none');
+    }
+  },
+
+  /* ── Desactiva la comparativa de tendencia ── */
+  clearBaseline() {
+    DataStore.comparisonBaseline = null;
+    SparklineEngine.clearAll();
+    UIController.refresh();
+    AuthEngine._toast('Comparativa de tendencia desactivada', 'info');
+  },
+
+  /**
+   * Pinta flecha + % en cada tarjeta declarada en KPI_DETAIL_MAP y,
+   * si Chart.js está disponible, su mini-sparkline de 2 puntos.
+   * Se invoca desde UIController.refresh() DESPUÉS de updateKPICards(),
+   * así nunca compite por el mismo DOM ni altera los valores absolutos
+   * que ya pinta ese método.
+   *
+   * @param {Object} kpisActual - Resultado de KPIEngine.compute() sobre
+   *   el reporte/filtros activos ahora mismo (mismo objeto que ya usa
+   *   updateKPICards() y ChartEngine.renderAll()).
+   */
+  render(kpisActual) {
+    const baseline = DataStore.comparisonBaseline;
+
+    if (!baseline) {
+      Object.keys(KPI_DETAIL_MAP).forEach(valueId => {
+        this._el(`${valueId}TrendRow`)?.classList.add('d-none');
+      });
+      SparklineEngine.clearAll();
+      this._toggleBanner(false);
+      return;
+    }
+
+    const kpisAnterior = KPIEngine.compute(baseline.rawMain);
+    const deltas = KPIEngine.computeDelta(kpisActual, kpisAnterior);
+
+    Object.entries(KPI_DETAIL_MAP).forEach(([valueId, { metric }]) => {
+      const rowEl   = this._el(`${valueId}TrendRow`);
+      const trendEl = this._el(`${valueId}Trend`);
+      const d = deltas[metric];
+      if (!rowEl || !trendEl || !d) return;
+
+      rowEl.classList.remove('d-none');
+      trendEl.classList.remove('kpi-trend-up', 'kpi-trend-down', 'kpi-trend-flat');
+
+      const icon = d.direction === 'up' ? '▲' : d.direction === 'down' ? '▼' : '►';
+      const anteriorVal = kpisAnterior[metric] ?? 0;
+      trendEl.classList.add(`kpi-trend-${d.direction}`);
+      trendEl.textContent = `${icon} ${d.text}`;
+      trendEl.title = `Anterior: ${anteriorVal} — Línea base: ${baseline.fileName}`;
+
+      const prevEl = this._el(`${valueId}TrendPrev`);
+      if (prevEl) prevEl.textContent = `antes: ${anteriorVal}`;
+
+      SparklineEngine.render(valueId, anteriorVal, kpisActual[metric] ?? 0, d.direction);
+    });
+
+    this._toggleBanner(true, baseline.fileName);
+  },
+
+  _toggleBanner(show, fileName) {
+    const banner = this._el('trendBaselineBanner');
+    if (!banner) return;
+    banner.classList.toggle('d-none', !show);
+    if (show) {
+      const nameEl = this._el('trendBaselineFileName');
+      if (nameEl) nameEl.textContent = fileName;
+    }
+  },
+
+  init() {
+    this._el('btnClearTrendBaseline')?.addEventListener('click', () => this.clearBaseline());
   },
 };
 
@@ -3621,6 +4110,13 @@ const DbDefaultEngine = {
 
       AuthEngine._toast(`"${file.name}" establecido como predeterminado ✓`, 'success');
 
+      /* Notificación de auditoría por Telegram (fire-and-forget) */
+      if (typeof TelegramEngine !== 'undefined') {
+        const usuarioActual = AuditEngine.getUser() || 'Desconocido';
+        TelegramEngine.notifyDefaultFileChanged(usuarioActual, file.name)
+          .catch(err => console.error('[DbDefaultEngine] Error al notificar cambio de predeterminado:', err));
+      }
+
       /* Refleja de inmediato el nuevo predeterminado en la UI del modal
          (banner + badge en la lista), sin esperar a la próxima apertura */
       this._currentDefault = file.name;
@@ -3767,6 +4263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   SaveEngine.init();
   DeleteEngine.init();
   DbDefaultEngine.init();
+  TrendEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:

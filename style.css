@@ -3542,9 +3542,17 @@ body.desktop-mode .container-fluid {
   color: var(--text-dim);
 }
 
-.login-name-input {
+.login-name-input-row {
   width: 300px;
   max-width: 80vw;
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.login-name-input {
+  flex: 1;
+  min-width: 0;
   padding: 12px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -3560,6 +3568,28 @@ body.desktop-mode .container-fluid {
 .login-name-input:focus {
   border-color: var(--brand-blue);
   box-shadow: 0 0 0 3px var(--brand-blue-dim);
+}
+
+.login-name-toggle-btn {
+  flex-shrink: 0;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 0 13px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.login-name-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+[data-theme="light"] .login-name-toggle-btn {
+  background: #f1f5f9;
+  border-color: rgba(0,0,0,.1);
 }
 
 .login-name-error {
@@ -3703,8 +3733,193 @@ body.desktop-mode .container-fluid {
     white-space: normal;
   }
 
-  .login-name-input {
+  .login-name-input-row {
     width: 100%;
   }
 }
 
+
+/* ── Modal "Comparativa Histórica" (ComparativaEngine) ──
+   La tabla usa la clase .data-table ya existente (theme-aware por
+   variables CSS) — aquí solo se agregan los detalles propios: el
+   subtítulo del modal y los badges de % de variación. Los colores
+   verde/rojo se mantienen fijos a propósito en ambos temas (dark y
+   light) porque son semánticos (crecimiento/caída), no decorativos;
+   el fondo semitransparente se adapta solo gracias a rgba(). */
+.comparativa-subtitle {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.comparativa-table.data-table {
+  font-size: 13.5px;
+}
+
+.comparativa-pct-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+.comparativa-pct-pos {
+  background: rgba(34, 197, 94, .15);
+  color: #16a34a;
+}
+
+.comparativa-pct-neg {
+  background: rgba(239, 68, 68, .15);
+  color: #dc2626;
+}
+
+.comparativa-pct-neutral {
+  background: rgba(148, 163, 184, .18);
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .comparativa-pct-pos {
+  background: rgba(22, 163, 74, .12);
+  color: #15803d;
+}
+
+[data-theme="light"] .comparativa-pct-neg {
+  background: rgba(220, 38, 38, .12);
+  color: #b91c1c;
+}
+
+/* ── Banner de Tendencia (TrendEngine) — mismo lenguaje visual
+   que .dash-info-box, para que se sienta parte del dashboard y no
+   un componente pegado aparte. ── */
+.trend-baseline-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 24px 14px;
+  padding: 10px 16px;
+  background: rgba(56, 189, 248, .08);
+  border: 1px solid rgba(56, 189, 248, .25);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  animation: trendBannerIn .25s ease;
+}
+
+.trend-baseline-banner i {
+  color: #38bdf8;
+  font-size: 15px;
+}
+
+.trend-baseline-banner strong {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+@keyframes trendBannerIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.btn-trend-clear {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.btn-trend-clear:hover {
+  background: rgba(239, 68, 68, .12);
+  color: #ef4444;
+}
+
+/* ── Fila de tendencia (flecha/% + sparkline) dentro de cada kpi-card ──
+   Oculta por defecto (d-none en el HTML) — no reserva espacio ni deja
+   huecos vacíos en las tarjetas mientras no hay línea base activa.
+   Al activarse, aparece con una animación suave. */
+.kpi-trend-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  animation: trendRowIn .25s ease;
+}
+
+@keyframes trendRowIn {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.kpi-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+
+.kpi-trend-up {
+  background: rgba(34, 197, 94, .15);
+  color: #16a34a;
+}
+
+.kpi-trend-down {
+  background: rgba(239, 68, 68, .15);
+  color: #dc2626;
+}
+
+.kpi-trend-flat {
+  background: rgba(148, 163, 184, .18);
+  color: var(--text-muted);
+}
+
+.kpi-trend-prev {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+[data-theme="light"] .kpi-trend-up {
+  background: rgba(22, 163, 74, .12);
+  color: #15803d;
+}
+
+[data-theme="light"] .kpi-trend-down {
+  background: rgba(220, 38, 38, .12);
+  color: #b91c1c;
+}
+
+.kpi-sparkline {
+  width: 44px !important;
+  height: 18px !important;
+  display: block;
+  opacity: .9;
+}
+
+/* Tarjetas más angostas en mobile: la fila de tendencia se acomoda
+   en columna para no apretar el badge y el sparkline entre sí */
+@media (max-width: 420px) {
+  .kpi-trend-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+}

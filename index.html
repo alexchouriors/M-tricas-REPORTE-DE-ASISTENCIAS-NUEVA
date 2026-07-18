@@ -53,8 +53,13 @@
 
     <div class="login-name-step" id="loginNameStep">
       <label for="loginNameInput" class="login-name-label">Ingresa tu nombre</label>
-      <input type="text" id="loginNameInput" class="login-name-input"
-             placeholder="Ej. Juan Pérez" autocomplete="off" maxlength="60" />
+      <div class="login-name-input-row">
+        <input type="password" id="loginNameInput" class="login-name-input"
+               placeholder="Ej. Juan Pérez" autocomplete="off" maxlength="60" />
+        <button type="button" class="login-name-toggle-btn" id="btnToggleLoginName" title="Mostrar / Ocultar">
+          <i class="bi bi-eye" id="loginNameToggleIcon"></i>
+        </button>
+      </div>
       <div class="login-name-error d-none" id="loginNameError">Por favor ingresa tu nombre.</div>
       <div class="login-name-error d-none" id="loginNameNotFoundError">Usuario no encontrado. Verifica el nombre ingresado.</div>
       <button type="button" class="login-btn-confirm" id="btnConfirmarNombre">
@@ -253,16 +258,11 @@
           </div>
         </div>
 
-        <!-- Bloque informativo con botón recargar integrado a la derecha -->
+        <!-- Bloque informativo con botón recargar integrado a la derecha
+             (por seguridad, ya NO se imprime la URL del repositorio) -->
         <div class="dash-info-box mb-3">
           <div class="dash-info-content">
-            <div><i class="bi bi-folder2-open me-2"></i><strong>Directorio:</strong> Carpeta <code>/REPORTES</code></div>
-            <div>
-              <i class="bi bi-github me-2"></i><strong>Repositorio:</strong>
-              <a href="https://github.com/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA" target="_blank" rel="noopener noreferrer">
-                alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA
-              </a>
-            </div>
+            <div><i class="bi bi-folder2-open me-2"></i><strong>Reportes a elegir</strong></div>
           </div>
           <button type="button" class="btn-reload-icon" id="btnRecargarRepo" title="Recargar repositorio">
             <i class="bi bi-arrow-repeat" id="reloadRepoIcon"></i>
@@ -309,8 +309,47 @@
 </div>
 
 <!-- ============================================================
-     MODAL — CONFIGURACIÓN DEL TOKEN GITHUB (AuthEngine)
+     MODAL — COMPARATIVA HISTÓRICA (ComparativaEngine)
+     No sustituye el reporte cargado en el dashboard: solo muestra
+     la comparación de KPIs, calculada de forma aislada.
 ============================================================ -->
+<div class="modal fade" id="modalComparativa" tabindex="-1" aria-labelledby="modalComparativaLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header dash-modal-header">
+        <div>
+          <h5 class="modal-title dash-modal-title" id="modalComparativaLabel">
+            <i class="bi bi-bar-chart-line-fill me-2"></i>Comparativa Histórica
+          </h5>
+          <div class="comparativa-subtitle" id="modalComparativaSubtitle"></div>
+        </div>
+        <button type="button" class="dash-modal-close" data-bs-dismiss="modal" aria-label="Cerrar">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body dash-modal-body">
+        <div class="table-responsive table-scroll">
+          <table class="data-table comparativa-table" id="tablaComparativa">
+            <thead>
+              <tr>
+                <th>KPI</th>
+                <th class="text-center">Valor Actual</th>
+                <th class="text-center">Valor Anterior</th>
+                <th class="text-center">% Variación</th>
+              </tr>
+            </thead>
+            <tbody id="comparativaTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
 <div class="modal fade" id="authModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
     <div class="modal-content auth-modal-content">
@@ -653,6 +692,16 @@
     </div>
   </section>
 
+  <!-- Banner de Tendencia (TrendEngine) — oculto hasta que se elige un
+       archivo histórico como línea base desde el Historial ("Tendencia") -->
+  <div class="trend-baseline-banner d-none" id="trendBaselineBanner">
+    <i class="bi bi-graph-up-arrow me-2"></i>
+    <span>Tendencia activa vs. <strong id="trendBaselineFileName"></strong></span>
+    <button type="button" class="btn-trend-clear" id="btnClearTrendBaseline" title="Desactivar comparativa de tendencia">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+
   <!-- ── KPI CARDS ── -->
   <section class="kpi-section px-4 pt-2 pb-3">
     <div class="row g-3">
@@ -662,6 +711,11 @@
         <div class="kpi-card kpi-primary">
           <div class="kpi-icon"><i class="bi bi-people-fill"></i></div>
           <div class="kpi-value" id="kpiTotal">—</div>
+          <div class="kpi-trend-row d-none" id="kpiTotalTrendRow">
+            <span class="kpi-trend" id="kpiTotalTrend"></span>
+            <span class="kpi-trend-prev" id="kpiTotalTrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiTotalSpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Total Registrados</div>
         </div>
       </div>
@@ -672,6 +726,11 @@
           <div class="kpi-icon"><i class="bi bi-house-heart-fill"></i></div>
           <div class="kpi-value" id="kpiCelulasSI">—</div>
           <div class="kpi-pct" id="kpiCelulasSIPct">—%</div>
+          <div class="kpi-trend-row d-none" id="kpiCelulasSITrendRow">
+            <span class="kpi-trend" id="kpiCelulasSITrend"></span>
+            <span class="kpi-trend-prev" id="kpiCelulasSITrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiCelulasSISpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Asistencia Célula</div>
         </div>
       </div>
@@ -682,6 +741,11 @@
           <div class="kpi-icon"><i class="bi bi-house-slash-fill"></i></div>
           <div class="kpi-value" id="kpiCelulasNO">—</div>
           <div class="kpi-pct" id="kpiCelulasNOPct">—%</div>
+          <div class="kpi-trend-row d-none" id="kpiCelulasNOTrendRow">
+            <span class="kpi-trend" id="kpiCelulasNOTrend"></span>
+            <span class="kpi-trend-prev" id="kpiCelulasNOTrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiCelulasNOSpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Inasistencia Célula</div>
         </div>
       </div>
@@ -692,6 +756,11 @@
           <div class="kpi-icon"><i class="bi bi-building-fill"></i></div>
           <div class="kpi-value" id="kpiServicioSI">—</div>
           <div class="kpi-pct" id="kpiServicioSIPct">—%</div>
+          <div class="kpi-trend-row d-none" id="kpiServicioSITrendRow">
+            <span class="kpi-trend" id="kpiServicioSITrend"></span>
+            <span class="kpi-trend-prev" id="kpiServicioSITrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiServicioSISpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Asistencia Servicio</div>
         </div>
       </div>
@@ -702,6 +771,11 @@
           <div class="kpi-icon"><i class="bi bi-building-slash"></i></div>
           <div class="kpi-value" id="kpiServicioNO">—</div>
           <div class="kpi-pct" id="kpiServicioNOPct">—%</div>
+          <div class="kpi-trend-row d-none" id="kpiServicioNOTrendRow">
+            <span class="kpi-trend" id="kpiServicioNOTrend"></span>
+            <span class="kpi-trend-prev" id="kpiServicioNOTrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiServicioNOSpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Inasistencia Servicio</div>
         </div>
       </div>
@@ -712,6 +786,11 @@
           <div class="kpi-icon"><i class="bi bi-star-fill"></i></div>
           <div class="kpi-value" id="kpiAmbosSI">—</div>
           <div class="kpi-pct" id="kpiAmbosSIPct">—%</div>
+          <div class="kpi-trend-row d-none" id="kpiAmbosSITrendRow">
+            <span class="kpi-trend" id="kpiAmbosSITrend"></span>
+            <span class="kpi-trend-prev" id="kpiAmbosSITrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiAmbosSISpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Asistió a Ambos</div>
         </div>
       </div>
@@ -722,6 +801,11 @@
           <div class="kpi-icon"><i class="bi bi-x-circle-fill"></i></div>
           <div class="kpi-value" id="kpiAmbosNO">—</div>
           <div class="kpi-pct" id="kpiAmbosNOPct">—%</div>
+          <div class="kpi-trend-row d-none" id="kpiAmbosNOTrendRow">
+            <span class="kpi-trend" id="kpiAmbosNOTrend"></span>
+            <span class="kpi-trend-prev" id="kpiAmbosNOTrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiAmbosNOSpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Ausente en Ambos</div>
         </div>
       </div>
@@ -731,6 +815,11 @@
         <div class="kpi-card kpi-new-c">
           <div class="kpi-icon"><i class="bi bi-person-plus-fill"></i></div>
           <div class="kpi-value" id="kpiNuevosCelula">—</div>
+          <div class="kpi-trend-row d-none" id="kpiNuevosCelulaTrendRow">
+            <span class="kpi-trend" id="kpiNuevosCelulaTrend"></span>
+            <span class="kpi-trend-prev" id="kpiNuevosCelulaTrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiNuevosCelulaSpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Nuevos en Célula</div>
         </div>
       </div>
@@ -740,6 +829,11 @@
         <div class="kpi-card kpi-new-s">
           <div class="kpi-icon"><i class="bi bi-person-check-fill"></i></div>
           <div class="kpi-value" id="kpiNuevosServicio">—</div>
+          <div class="kpi-trend-row d-none" id="kpiNuevosServicioTrendRow">
+            <span class="kpi-trend" id="kpiNuevosServicioTrend"></span>
+            <span class="kpi-trend-prev" id="kpiNuevosServicioTrendPrev"></span>
+            <canvas class="kpi-sparkline" id="kpiNuevosServicioSpark" width="46" height="20"></canvas>
+          </div>
           <div class="kpi-label">Nuevos en Servicio</div>
         </div>
       </div>

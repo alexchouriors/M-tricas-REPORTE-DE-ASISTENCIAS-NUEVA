@@ -188,6 +188,77 @@ const TelegramEngine = {
   },
 
   /**
+   * Notifica el uso de una función de auditoría/análisis del dashboard
+   * (Comparar, Tendencia, etc.) con un mensaje genérico de "acción
+   * utilizada". Se envía únicamente al chat privado del bot.
+   *
+   * @param {string} user   - Nombre del usuario que ejecuta la acción
+   * @param {string} accion - Frase de la acción en 3ra persona, ej.
+   *                          "Comparó sus datos." / "Revisó su tendencia."
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifyFeatureUsed(user, accion) {
+    try {
+      const nombre = this._escapeHtml(user);
+      const now = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `🖥️ <b>ALERTA DE FUNCIÓN UTILIZADA</b>\n\n`;
+      msg += `👤 <b>Usuario:</b> ${nombre}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n`;
+      msg += `🖥️ <b>ACCIÓN:</b> ${nombre} ${this._escapeHtml(accion)}\n\n`;
+      msg += `🔒 <i>Notificación de acción — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de función utilizada no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifyFeatureUsed():', err);
+      return [];
+    }
+  },
+
+  /**
+   * Notifica el cambio del archivo predeterminado (config.json) que se
+   * autocarga al iniciar sesión. Se envía únicamente al chat privado del bot.
+   *
+   * @param {string} user     - Nombre del usuario que hizo el cambio
+   * @param {string} fileName - Nombre del nuevo archivo predeterminado
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifyDefaultFileChanged(user, fileName) {
+    try {
+      const nombre   = this._escapeHtml(user);
+      const archivo  = this._escapeHtml(fileName);
+      const now      = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `🖥️ <b>ALERTA DE CAMBIO DE ARCHIVO PREDETERMINADO</b>\n\n`;
+      msg += `👤 <b>Usuario:</b> ${nombre}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n`;
+      msg += `🖥️ <b>ACCIÓN:</b> Se cambió el archivo predeterminado por ${archivo}.\n\n`;
+      msg += `🔒 <i>Notificación de acción — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de cambio de predeterminado no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifyDefaultFileChanged():', err);
+      return [];
+    }
+  },
+
+  /**
    * Notifica una solicitud de soporte cuando un usuario no reconocido
    * (no presente en USUARIOS.JS) intenta acceder al dashboard y
    * deja sus datos de contacto para que el administrador lo asista.
