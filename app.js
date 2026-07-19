@@ -2408,9 +2408,16 @@ const SessionEngine = {
     }
 
     /* Auto-carga del archivo predeterminado (config.json → REPORTES/<archivo>),
-       fire-and-forget: no bloquea el fade-out del overlay ni el login en sí */
+       fire-and-forget: no bloquea el fade-out del overlay ni el login en sí.
+       Inmediatamente DESPUÉS de que termine de cargar (encadenado con .then,
+       no en paralelo), se revisa si hay una tendencia predeterminada guardada
+       en localStorage (ver DbDefaultEngine) y se aplica automáticamente. */
     if (typeof AutoLoadEngine !== 'undefined') {
-      AutoLoadEngine.loadDefaultFile();
+      AutoLoadEngine.loadDefaultFile().then(() => {
+        if (typeof DbDefaultEngine !== 'undefined') {
+          DbDefaultEngine.applyStoredTrendIfAny();
+        }
+      });
     }
 
     /* Desvanece el overlay y revela el dashboard */
@@ -3082,6 +3089,12 @@ const SparklineEngine = {
        elegido de forma AISLADA — nunca sustituye DataStore.rawMain,
        el reporte activo del dashboard queda intacto.
 ──────────────────────────────────────────────────────────── */
+/* Tarjetas donde un aumento (+) es una MALA noticia y una disminución (-)
+   es BUENA: aquí se invierte solo el COLOR (verde/rojo) de la tendencia,
+   nunca el cálculo matemático ni la flecha ▲/▼, que siguen reflejando la
+   dirección real del dato. Usa las claves de KPI_DETAIL_MAP. */
+const KPI_INVERTED_POLARITY = ['kpiCelulasNO', 'kpiServicioNO', 'kpiAmbosNO'];
+
 const TrendEngine = {
 
   _loading: false,
@@ -3182,14 +3195,23 @@ const TrendEngine = {
 
       const icon = d.direction === 'up' ? '▲' : d.direction === 'down' ? '▼' : '►';
       const anteriorVal = kpisAnterior[metric] ?? 0;
-      trendEl.classList.add(`kpi-trend-${d.direction}`);
+
+      /* Polaridad invertida SOLO para color: el icono y el texto del
+         porcentaje (d.text) siguen mostrando la dirección matemática
+         real; únicamente cambia qué color (verde/rojo) se le asigna. */
+      const isInverted = KPI_INVERTED_POLARITY.includes(valueId);
+      const colorDirection = isInverted
+        ? (d.direction === 'up' ? 'down' : d.direction === 'down' ? 'up' : 'flat')
+        : d.direction;
+
+      trendEl.classList.add(`kpi-trend-${colorDirection}`);
       trendEl.textContent = `${icon} ${d.text}`;
       trendEl.title = `Anterior: ${anteriorVal} — Línea base: ${baseline.fileName}`;
 
       const prevEl = this._el(`${valueId}TrendPrev`);
       if (prevEl) prevEl.textContent = `antes: ${anteriorVal}`;
 
-      SparklineEngine.render(valueId, anteriorVal, kpisActual[metric] ?? 0, d.direction);
+      SparklineEngine.render(valueId, anteriorVal, kpisActual[metric] ?? 0, colorDirection);
     });
 
     this._toggleBanner(true, baseline.fileName);
@@ -3861,6 +3883,12 @@ const DbDefaultEngine = {
   _sessionToken: '',   // Solo en memoria durante la sesión del modal; nunca persistido
   _currentDefault: '', // Nombre del archivo actualmente marcado como predeterminado (config.json)
 
+  /* ── "Establecer tendencia" ──
+     A diferencia del predeterminado (que vive en config.json vía GitHub),
+     la tendencia predeterminada es puramente local: se guarda en
+     localStorage bajo esta llave como { fileName, download_url }. */
+  TREND_STORAGE_KEY: 'tendenciaPredeterminada',
+
   _el(id) { return document.getElementById(id); },
 
   _ext(name) {
@@ -3930,6 +3958,49 @@ const DbDefaultEngine = {
     this._setState('error');
   },
 
+  /* ── Lectura/escritura de la tendencia predeterminada (localStorage) ── */
+  _getStoredTrendFile() {
+    try {
+      const raw = localStorage.getItem(this.TREND_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed.fileName === 'string' ? parsed : null;
+    } catch (err) {
+      console.error('[DbDefaultEngine] Error leyendo tendenciaPredeterminada de localStorage:', err);
+      return null;
+    }
+  },
+
+  _setStoredTrendFile(file) {
+    try {
+      localStorage.setItem(this.TREND_STORAGE_KEY, JSON.stringify({
+        fileName: file.name,
+        download_url: file.download_url,
+      }));
+      return true;
+    } catch (err) {
+      console.error('[DbDefaultEngine] Error guardando tendenciaPredeterminada en localStorage:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Se llama al iniciar sesión (ver SessionEngine._confirmLogin), DESPUÉS
+   * de que el archivo predeterminado principal ya terminó de cargar.
+   * Si el usuario tiene una tendencia guardada en localStorage, dispara
+   * TrendEngine.setBaseline() (el mismo motor que ya usa el botón
+   * "Tendencia" del Historial) para que el dashboard aparezca ya
+   * cruzado contra esa línea base, sin clics adicionales.
+   */
+  applyStoredTrendIfAny() {
+    const stored = this._getStoredTrendFile();
+    if (!stored) return;
+    if (typeof TrendEngine === 'undefined') return;
+
+    TrendEngine.setBaseline({ name: stored.fileName, download_url: stored.download_url })
+      .catch(err => console.error('[DbDefaultEngine] No se pudo aplicar la tendencia predeterminada guardada:', err));
+  },
+
   /* ── Consulta config.json y muestra cuál es el archivo predeterminado
        actual en el banner informativo del modal ── */
   async _fetchCurrentDefault() {
@@ -3993,8 +4064,13 @@ const DbDefaultEngine = {
     const listEl = this._el('listaDbDefaultContainer');
     if (!listEl) return;
     listEl.innerHTML = '';
+
+    const storedTrend = this._getStoredTrendFile();
+    const trendFileName = storedTrend ? storedTrend.fileName : '';
+
     this._files.forEach((file, idx) => {
       const isCurrent = !!this._currentDefault && file.name === this._currentDefault;
+      const isTrend   = !!trendFileName && file.name === trendFileName;
 
       const item = document.createElement('div');
       item.className = 'list-group-item d-flex align-items-center justify-content-between flex-wrap gap-2'
@@ -4005,18 +4081,65 @@ const DbDefaultEngine = {
           <i class="bi bi-file-earmark-spreadsheet text-success fs-5"></i>
           <span class="text-truncate" title="${file.name}">${file.name}</span>
           ${isCurrent ? '<span class="badge-current-default ms-1"><i class="bi bi-star-fill me-1"></i>Predeterminado</span>' : ''}
+          ${isTrend ? '<span class="badge-current-trend ms-1"><i class="bi bi-graph-up-arrow me-1"></i>Tendencia</span>' : ''}
         </div>
-        <button type="button" class="btn-set-default${isCurrent ? ' is-current' : ''}" data-idx="${idx}"
-                title="${isCurrent ? `"${file.name}" ya es el predeterminado` : `Establecer ${file.name} como predeterminado`}"
-                ${isCurrent ? 'disabled' : ''}>
-          <i class="bi bi-star-fill"></i>${isCurrent ? 'Ya es el predeterminado' : 'Establecer como predeterminado'}
-        </button>`;
+        <div class="d-flex align-items-center gap-2 ms-auto db-default-actions">
+          <button type="button" class="btn-set-default${isCurrent ? ' is-current' : ''}" data-idx="${idx}"
+                  title="${isCurrent ? `"${file.name}" ya es el predeterminado` : `Establecer ${file.name} como predeterminado`}"
+                  ${isCurrent ? 'disabled' : ''}>
+            <i class="bi bi-star-fill"></i>${isCurrent ? 'Ya es el predeterminado' : 'Establecer como predeterminado'}
+          </button>
+          <button type="button" class="btn-set-trend${isTrend ? ' is-current' : ''}" data-idx="${idx}"
+                  title="${isTrend ? `"${file.name}" ya es la tendencia activa` : `Establecer ${file.name} como tendencia`}"
+                  ${isTrend ? 'disabled' : ''}>
+            <i class="bi bi-graph-up-arrow"></i>${isTrend ? 'Tendencia activa' : 'Establecer tendencia'}
+          </button>
+        </div>`;
 
       if (!isCurrent) {
         item.querySelector('.btn-set-default').addEventListener('click', () => this._setDefault(file, item));
       }
+      if (!isTrend) {
+        item.querySelector('.btn-set-trend').addEventListener('click', () => this._setTrend(file, item));
+      }
       listEl.appendChild(item);
     });
+  },
+
+  /* ── Guarda la tendencia predeterminada en localStorage y la aplica
+       de inmediato al dashboard, reutilizando TrendEngine.setBaseline()
+       (el mismo motor que ya usa el botón "Tendencia" del Historial) ── */
+  async _setTrend(file, itemEl) {
+    const btn = itemEl.querySelector('.btn-set-trend');
+    const originalHTML = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+
+    const saved = this._setStoredTrendFile(file);
+    if (!saved) {
+      if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+      alert(`No se pudo guardar "${file.name}" como tendencia predeterminada (localStorage no disponible).`);
+      return;
+    }
+
+    AuthEngine._toast(`"${file.name}" establecido como tendencia predeterminada ✓`, 'success');
+
+    /* Notificación de auditoría por Telegram (fire-and-forget) */
+    if (typeof TelegramEngine !== 'undefined') {
+      const usuarioActual = AuditEngine.getUser() || 'Desconocido';
+      TelegramEngine.notifyFeatureUsed(usuarioActual, `Estableció "${file.name}" como tendencia predeterminada.`)
+        .catch(err => console.error('[DbDefaultEngine] Error al notificar cambio de tendencia:', err));
+    }
+
+    /* Refleja de inmediato el nuevo estado en la lista (badge + botón) */
+    this._renderList();
+
+    /* Aplica la tendencia al dashboard ahora mismo, sin esperar al
+       próximo login (reutiliza TrendEngine.setBaseline sin tocarlo) */
+    try {
+      await TrendEngine.setBaseline(file);
+    } catch (err) {
+      console.error('[DbDefaultEngine] No se pudo aplicar la tendencia recién guardada:', err);
+    }
   },
 
   /* ── PUT a config.json en la raíz del repo con el nombre elegido ── */

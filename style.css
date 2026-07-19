@@ -952,6 +952,78 @@ body.kpi-modal-open { overflow: hidden; }
   .chart-body { min-height: 200px; }
   .filter-select { min-width: 100px; }
   .table-search { width: 180px; }
+
+  /* ── Historial de Reportes: fila de 4 botones de acción por tarjeta ──
+     No se toca el HTML/JS (mismos id/clases: .list-group-item > .ms-auto,
+     .btn-cargar-reporte, .btn-comparar-reporte, .btn-tendencia-reporte,
+     a.btn-outline-success), solo se reestructura el layout en móvil.
+     El contenedor de botones (div.ms-auto) pasa de "fila que desborda"
+     a una cuadrícula 2x2 que ocupa todo el ancho disponible.
+
+     IMPORTANTE: ese div ya trae las clases de Bootstrap .d-flex y
+     .gap-2, que Bootstrap define con !important (display:flex !important,
+     gap:.5rem !important). Sin !important aquí, esas reglas ganaban
+     siempre y el grid nunca se aplicaba — de ahí que el problema
+     persistiera. Por eso las propiedades clave llevan !important. */
+  #listaReportesContainer .list-group-item {
+    row-gap: 10px;
+  }
+
+  #listaReportesContainer .list-group-item > .ms-auto {
+    flex: 1 1 100% !important;   /* fuerza que ocupe toda la fila al envolver */
+    margin-left: 0 !important;
+    display: grid !important;    /* pisa el display:flex !important de .d-flex */
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;         /* pisa el gap:.5rem !important de .gap-2 */
+  }
+
+  #listaReportesContainer .list-group-item > .ms-auto > .btn,
+  #listaReportesContainer .list-group-item > .ms-auto > a.btn {
+    width: 100%;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: normal;    /* si aún así hace falta 2 líneas, que se vea equilibrado */
+    line-height: 1.25;
+    font-size: 12.5px;
+    padding: 8px 6px;
+  }
+
+  #listaReportesContainer .list-group-item > .ms-auto > .btn i,
+  #listaReportesContainer .list-group-item > .ms-auto > a.btn i {
+    margin-right: 4px;
+  }
+
+  /* ── Base de Datos (Beta): botones "Establecer como predeterminado" +
+     "Establecer tendencia" por cada archivo. Mismo problema y misma
+     solución que #listaReportesContainer: .db-default-actions ya trae
+     .d-flex/.gap-2 de Bootstrap (ambas con !important), así que la
+     conversión a grid necesita !important para poder ganarles. */
+  #listaDbDefaultContainer .list-group-item {
+    row-gap: 10px;
+  }
+
+  #listaDbDefaultContainer .list-group-item > .db-default-actions {
+    flex: 1 1 100% !important;
+    margin-left: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  #listaDbDefaultContainer .list-group-item > .db-default-actions > .btn-set-default,
+  #listaDbDefaultContainer .list-group-item > .db-default-actions > .btn-set-trend {
+    width: 100%;
+    margin: 0 !important;
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.25;
+    font-size: 11.5px;
+    padding: 8px 6px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -3209,6 +3281,81 @@ body.desktop-mode .container-fluid {
 
 [data-theme="light"] .db-default-current-label {
   color: #15803d;
+}
+
+/* ── Botón "Establecer tendencia" (variante azul, distinta del verde
+   de "Establecer como predeterminado" para no confundirlas) ── */
+.btn-set-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: rgba(56,189,248,.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56,189,248,.35);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+  white-space: nowrap;
+  font-family: 'Outfit', sans-serif;
+}
+
+.btn-set-trend:hover:not(:disabled) {
+  background: rgba(56,189,248,.25);
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56,189,248,.2);
+}
+
+.btn-set-trend:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .btn-set-trend {
+  background: rgba(2,132,199,.08);
+  color: #0284c7;
+  border-color: rgba(2,132,199,.3);
+}
+
+[data-theme="light"] .btn-set-trend:hover:not(:disabled) {
+  background: rgba(2,132,199,.16);
+  border-color: #0284c7;
+}
+
+/* ── Estado "tendencia activa" (botón deshabilitado, sólido) ── */
+.btn-set-trend.is-current {
+  background: rgba(56,189,248,.9);
+  color: #fff;
+  border-color: rgba(56,189,248,.9);
+  opacity: 1;
+}
+
+[data-theme="light"] .btn-set-trend.is-current {
+  background: #0284c7;
+  color: #fff;
+  border-color: #0284c7;
+}
+
+/* ── Badge "Tendencia" junto al nombre del archivo ── */
+.badge-current-trend {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  background: rgba(56,189,248,.18);
+  color: #38bdf8;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+[data-theme="light"] .badge-current-trend {
+  background: rgba(2,132,199,.12);
+  color: #0284c7;
 }
 
 /* ── Botón papelera en lista de archivos del modal Eliminar ── */
