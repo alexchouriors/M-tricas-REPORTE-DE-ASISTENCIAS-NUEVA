@@ -3882,12 +3882,7 @@ const DbDefaultEngine = {
   _files: [],
   _sessionToken: '',   // Solo en memoria durante la sesión del modal; nunca persistido
   _currentDefault: '', // Nombre del archivo actualmente marcado como predeterminado (config.json)
-
-  /* ── "Establecer tendencia" ──
-     A diferencia del predeterminado (que vive en config.json vía GitHub),
-     la tendencia predeterminada es puramente local: se guarda en
-     localStorage bajo esta llave como { fileName, download_url }. */
-  TREND_STORAGE_KEY: 'tendenciaPredeterminada',
+  _currentTrend: '',   // Nombre del archivo actualmente marcado como tendencia (config.json)
 
   _el(id) { return document.getElementById(id); },
 
@@ -3958,53 +3953,70 @@ const DbDefaultEngine = {
     this._setState('error');
   },
 
-  /* ── Lectura/escritura de la tendencia predeterminada (localStorage) ── */
-  _getStoredTrendFile() {
-    try {
-      const raw = localStorage.getItem(this.TREND_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed.fileName === 'string' ? parsed : null;
-    } catch (err) {
-      console.error('[DbDefaultEngine] Error leyendo tendenciaPredeterminada de localStorage:', err);
-      return null;
-    }
-  },
-
-  _setStoredTrendFile(file) {
-    try {
-      localStorage.setItem(this.TREND_STORAGE_KEY, JSON.stringify({
-        fileName: file.name,
-        download_url: file.download_url,
-      }));
-      return true;
-    } catch (err) {
-      console.error('[DbDefaultEngine] Error guardando tendenciaPredeterminada en localStorage:', err);
+  /**
+   * Verifica que el usuario en sesión tenga rol MAESTRO antes de
+   * permitir cualquier escritura de tendencia/predeterminado. No basta
+   * con ocultar el botón en la UI: esta es la validación real,
+   * fail-closed, a nivel de lógica — igual que exige AccessManager
+   * para los datos.
+   *
+   * @returns {boolean}
+   */
+  _isMaster() {
+    if (typeof UsuarioRules === 'undefined') {
+      console.error('[DbDefaultEngine] UsuarioRules no está cargado — se deniega por seguridad (fail-closed).');
       return false;
     }
+    const usuarioActual = AuditEngine.getUser();
+    return UsuarioRules._resolveRole(usuarioActual) === 'MAESTRO';
   },
 
   /**
    * Se llama al iniciar sesión (ver SessionEngine._confirmLogin), DESPUÉS
    * de que el archivo predeterminado principal ya terminó de cargar.
-   * Si el usuario tiene una tendencia guardada en localStorage, dispara
-   * TrendEngine.setBaseline() (el mismo motor que ya usa el botón
-   * "Tendencia" del Historial) para que el dashboard aparezca ya
-   * cruzado contra esa línea base, sin clics adicionales.
+   * Lee `archivo_tendencia` desde config.json en GitHub (misma fuente
+   * global que usa AutoLoadEngine para el predeterminado — YA NO
+   * localStorage, así que funciona igual en cualquier dispositivo para
+   * cualquier usuario, sin necesidad de configurarlo por su cuenta).
+   * Si existe, resuelve su download_url y dispara TrendEngine.setBaseline()
+   * (el mismo motor que ya usa el botón "Tendencia" del Historial) para
+   * que el dashboard aparezca ya cruzado contra esa línea base, sin
+   * clics adicionales.
    */
-  applyStoredTrendIfAny() {
-    const stored = this._getStoredTrendFile();
-    if (!stored) return;
-    if (typeof TrendEngine === 'undefined') return;
+  async applyStoredTrendIfAny() {
+    try {
+      const cfgRes = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
+        cache: 'no-store',
+        headers: { 'Accept': 'application/vnd.github.v3.raw' },
+      });
+      if (!cfgRes.ok) return;
 
-    TrendEngine.setBaseline({ name: stored.fileName, download_url: stored.download_url })
-      .catch(err => console.error('[DbDefaultEngine] No se pudo aplicar la tendencia predeterminada guardada:', err));
+      const config   = await cfgRes.json().catch(() => null);
+      const fileName = config?.archivo_tendencia;
+      if (!fileName) return;
+      if (typeof TrendEngine === 'undefined') return;
+
+      /* Necesitamos el download_url del archivo — config.json solo
+         guarda el nombre, igual que hace con archivo_predeterminado. */
+      const fileRes = await fetch(
+        this.GITHUB_CONTENTS_BASE + 'REPORTES/' + encodeURIComponent(fileName),
+        { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } }
+      );
+      if (!fileRes.ok) return;
+      const fileMeta = await fileRes.json();
+      if (!fileMeta.download_url) return;
+
+      await TrendEngine.setBaseline({ name: fileName, download_url: fileMeta.download_url });
+    } catch (err) {
+      console.error('[DbDefaultEngine] No se pudo aplicar la tendencia predeterminada guardada:', err);
+    }
   },
 
   /* ── Consulta config.json y muestra cuál es el archivo predeterminado
-       actual en el banner informativo del modal ── */
+       Y la tendencia actuales en los banners informativos del modal ── */
   async _fetchCurrentDefault() {
-    const label = this._el('dbDefaultCurrentLabel');
+    const label      = this._el('dbDefaultCurrentLabel');
+    const trendLabel = this._el('dbDefaultCurrentTrendLabel');
     try {
       const res = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
         cache: 'no-store',
@@ -4012,19 +4024,30 @@ const DbDefaultEngine = {
       });
       if (!res.ok) {
         this._currentDefault = '';
-        if (label) label.innerHTML = '<i class="bi bi-star me-1"></i>Aún no hay ningún archivo predeterminado configurado.';
+        this._currentTrend   = '';
+        if (label)      label.innerHTML      = '<i class="bi bi-star me-1"></i>Aún no hay ningún archivo predeterminado configurado.';
+        if (trendLabel) trendLabel.innerHTML = '<i class="bi bi-graph-up me-1"></i>Aún no hay ninguna tendencia configurada.';
         return;
       }
       const config = await res.json().catch(() => null);
       this._currentDefault = config?.archivo_predeterminado || '';
+      this._currentTrend   = config?.archivo_tendencia || '';
+
       if (label) {
         label.innerHTML = this._currentDefault
           ? `<i class="bi bi-star-fill me-1"></i>Predeterminado actual: <strong>${this._currentDefault}</strong>`
           : '<i class="bi bi-star me-1"></i>Aún no hay ningún archivo predeterminado configurado.';
       }
+      if (trendLabel) {
+        trendLabel.innerHTML = this._currentTrend
+          ? `<i class="bi bi-graph-up-arrow me-1"></i>Tendencia actual: <strong>${this._currentTrend}</strong>`
+          : '<i class="bi bi-graph-up me-1"></i>Aún no hay ninguna tendencia configurada.';
+      }
     } catch (err) {
       this._currentDefault = '';
-      if (label) label.innerHTML = '<i class="bi bi-star me-1"></i>No se pudo consultar el predeterminado actual.';
+      this._currentTrend   = '';
+      if (label)      label.innerHTML      = '<i class="bi bi-star me-1"></i>No se pudo consultar el predeterminado actual.';
+      if (trendLabel) trendLabel.innerHTML = '<i class="bi bi-graph-up me-1"></i>No se pudo consultar la tendencia actual.';
     }
   },
 
@@ -4065,12 +4088,9 @@ const DbDefaultEngine = {
     if (!listEl) return;
     listEl.innerHTML = '';
 
-    const storedTrend = this._getStoredTrendFile();
-    const trendFileName = storedTrend ? storedTrend.fileName : '';
-
     this._files.forEach((file, idx) => {
       const isCurrent = !!this._currentDefault && file.name === this._currentDefault;
-      const isTrend   = !!trendFileName && file.name === trendFileName;
+      const isTrend   = !!this._currentTrend && file.name === this._currentTrend;
 
       const item = document.createElement('div');
       item.className = 'list-group-item d-flex align-items-center justify-content-between flex-wrap gap-2'
@@ -4106,44 +4126,150 @@ const DbDefaultEngine = {
     });
   },
 
-  /* ── Guarda la tendencia predeterminada en localStorage y la aplica
-       de inmediato al dashboard, reutilizando TrendEngine.setBaseline()
-       (el mismo motor que ya usa el botón "Tendencia" del Historial) ── */
+  /* ── Guarda la tendencia predeterminada en config.json (GitHub) —
+       misma fuente global que usa el archivo predeterminado — y la
+       aplica de inmediato al dashboard, reutilizando
+       TrendEngine.setBaseline() (el mismo motor que ya usa el botón
+       "Tendencia" del Historial). SOLO usuarios con rol MAESTRO
+       pueden ejecutar esta escritura (ver _isMaster()). ── */
   async _setTrend(file, itemEl) {
+    /* Validación de permisos a nivel de lógica — fail-closed, no
+       depende solo de que el botón esté oculto en la UI. */
+    if (!this._isMaster()) {
+      alert('Solo un usuario con rol MAESTRO puede establecer la tendencia predeterminada.');
+      return;
+    }
+
+    const token = this._sessionToken;
+    if (!token) { alert('Sesión de token expirada. Vuelve a abrir "Base de Datos (Beta)".'); return; }
+
     const btn = itemEl.querySelector('.btn-set-trend');
     const originalHTML = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
 
-    const saved = this._setStoredTrendFile(file);
-    if (!saved) {
-      if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
-      alert(`No se pudo guardar "${file.name}" como tendencia predeterminada (localStorage no disponible).`);
-      return;
-    }
-
-    AuthEngine._toast(`"${file.name}" establecido como tendencia predeterminada ✓`, 'success');
-
-    /* Notificación de auditoría por Telegram (fire-and-forget) */
-    if (typeof TelegramEngine !== 'undefined') {
-      const usuarioActual = AuditEngine.getUser() || 'Desconocido';
-      TelegramEngine.notifyFeatureUsed(usuarioActual, `Estableció "${file.name}" como tendencia predeterminada.`)
-        .catch(err => console.error('[DbDefaultEngine] Error al notificar cambio de tendencia:', err));
-    }
-
-    /* Refleja de inmediato el nuevo estado en la lista (badge + botón) */
-    this._renderList();
-
-    /* Aplica la tendencia al dashboard ahora mismo, sin esperar al
-       próximo login (reutiliza TrendEngine.setBaseline sin tocarlo) */
     try {
+      const apiUrl = this.GITHUB_CONTENTS_BASE + 'config.json';
+
+      /* Lee config.json actual para preservar archivo_predeterminado
+         (y cualquier otra clave futura) y obtener el sha para el PUT.
+         cache:'no-store' evita servir una respuesta 404 cacheada de
+         cuando el archivo aún no existía (ver nota en _setDefault). */
+      let sha = null;
+      let existingConfig = {};
+      const checkRes = await fetch(apiUrl, {
+        cache: 'no-store',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+        },
+      });
+      if (checkRes.ok) {
+        const existing = await checkRes.json();
+        sha = existing.sha;
+        try {
+          existingConfig = JSON.parse(decodeURIComponent(escape(atob(existing.content.replace(/\n/g, '')))));
+        } catch {
+          existingConfig = {};
+        }
+      }
+
+      const newConfig = { ...existingConfig, archivo_tendencia: file.name };
+      const content = JSON.stringify(newConfig, null, 2);
+      const base64Content = btoa(unescape(encodeURIComponent(content)));
+
+      const body = {
+        message: `Dashboard: Establece "${file.name}" como tendencia predeterminada`,
+        content: base64Content,
+      };
+      if (sha) body.sha = sha;
+
+      let putRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept':        'application/vnd.github.v3+json',
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      /* Salvaguarda ante 422 "sha wasn't supplied" — mismo patrón que
+         _setDefault(): refresca el sha (y el contenido, para no pisar
+         un archivo_predeterminado guardado justo entre medio) y reintenta. */
+      if (!putRes.ok && putRes.status === 422) {
+        const retryCheck = await fetch(apiUrl, {
+          cache: 'no-store',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json',
+          },
+        });
+        if (retryCheck.ok) {
+          const existing = await retryCheck.json();
+          if (existing.sha) {
+            let retryConfig = {};
+            try {
+              retryConfig = JSON.parse(decodeURIComponent(escape(atob(existing.content.replace(/\n/g, '')))));
+            } catch {
+              retryConfig = {};
+            }
+            const mergedRetry = { ...retryConfig, archivo_tendencia: file.name };
+            body.sha = existing.sha;
+            body.content = btoa(unescape(encodeURIComponent(JSON.stringify(mergedRetry, null, 2))));
+            putRes = await fetch(apiUrl, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept':        'application/vnd.github.v3+json',
+                'Content-Type':  'application/json',
+              },
+              body: JSON.stringify(body),
+            });
+          }
+        }
+      }
+
+      if (!putRes.ok) {
+        const errData = await putRes.json().catch(() => ({}));
+        const detail  = errData.message || putRes.statusText;
+        if (putRes.status === 401) throw new Error('Token inválido o sin permisos (401). Verifica tu PAT.');
+        if (putRes.status === 422) throw new Error('Error de validación (422): ' + detail);
+        throw new Error(`Error ${putRes.status}: ${detail}`);
+      }
+
+      AuthEngine._toast(`"${file.name}" establecido como tendencia predeterminada ✓`, 'success');
+
+      /* Notificación de auditoría por Telegram (fire-and-forget) */
+      if (typeof TelegramEngine !== 'undefined') {
+        const usuarioActual = AuditEngine.getUser() || 'Desconocido';
+        TelegramEngine.notifyFeatureUsed(usuarioActual, `Estableció "${file.name}" como tendencia predeterminada.`)
+          .catch(err => console.error('[DbDefaultEngine] Error al notificar cambio de tendencia:', err));
+      }
+
+      /* Refleja de inmediato el nuevo estado en la UI del modal
+         (banner + badge en la lista), sin esperar a la próxima apertura */
+      this._currentTrend = file.name;
+      this._renderList();
+      const trendLabel = this._el('dbDefaultCurrentTrendLabel');
+      if (trendLabel) trendLabel.innerHTML = `<i class="bi bi-graph-up-arrow me-1"></i>Tendencia actual: <strong>${file.name}</strong>`;
+
+      /* Aplica la tendencia al dashboard ahora mismo, sin esperar al
+         próximo login (reutiliza TrendEngine.setBaseline sin tocarlo) */
       await TrendEngine.setBaseline(file);
+
     } catch (err) {
-      console.error('[DbDefaultEngine] No se pudo aplicar la tendencia recién guardada:', err);
+      if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+      alert(`No se pudo establecer "${file.name}" como tendencia predeterminada:\n${err.message}`);
     }
   },
 
   /* ── PUT a config.json en la raíz del repo con el nombre elegido ── */
   async _setDefault(file, itemEl) {
+    if (!this._isMaster()) {
+      alert('Solo un usuario con rol MAESTRO puede establecer el archivo predeterminado.');
+      return;
+    }
+
     const token = this._sessionToken;
     if (!token) { alert('Sesión de token expirada. Vuelve a abrir "Base de Datos (Beta)".'); return; }
 
@@ -4164,6 +4290,7 @@ const DbDefaultEngine = {
          cache:'no-store' del propio fetch() ya evita la caché sin
          necesidad de headers adicionales. */
       let sha = null;
+      let existingConfig = {};
       const checkRes = await fetch(apiUrl, {
         cache: 'no-store',
         headers: {
@@ -4174,9 +4301,15 @@ const DbDefaultEngine = {
       if (checkRes.ok) {
         const existing = await checkRes.json();
         sha = existing.sha;
+        try {
+          existingConfig = JSON.parse(decodeURIComponent(escape(atob(existing.content.replace(/\n/g, '')))));
+        } catch {
+          existingConfig = {};
+        }
       }
 
-      const content = JSON.stringify({ archivo_predeterminado: file.name }, null, 2);
+      const newConfig = { ...existingConfig, archivo_predeterminado: file.name };
+      const content = JSON.stringify(newConfig, null, 2);
       const base64Content = btoa(unescape(encodeURIComponent(content)));
 
       const body = {
@@ -4209,7 +4342,15 @@ const DbDefaultEngine = {
         if (retryCheck.ok) {
           const existing = await retryCheck.json();
           if (existing.sha) {
+            let retryConfig = {};
+            try {
+              retryConfig = JSON.parse(decodeURIComponent(escape(atob(existing.content.replace(/\n/g, '')))));
+            } catch {
+              retryConfig = {};
+            }
+            const mergedRetry = { ...retryConfig, archivo_predeterminado: file.name };
             body.sha = existing.sha;
+            body.content = btoa(unescape(encodeURIComponent(JSON.stringify(mergedRetry, null, 2))));
             putRes = await fetch(apiUrl, {
               method: 'PUT',
               headers: {
