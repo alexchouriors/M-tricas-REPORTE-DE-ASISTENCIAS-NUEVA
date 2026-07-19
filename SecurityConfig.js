@@ -62,25 +62,25 @@ const ACCESS_RULES = {
     'MINISTROS Renny y Airam',
   ],
 
-  /* ── Grupo "Magalis, Omiria y Alexandro" ──
+  /* ── Grupo "Magalis, Edith y Alexandro" ──
      Celda combinada/centrada A118:E118 del Excel:
-       - "Magalis, Omiria y Alexandro"
-       - "Ministra Magalis, Omiria y Alexandro"                     */
+       - "Magalis, Edith y Alexandro"
+       - "Ministra Magalis, Edith y Alexandro"                     */
   MAGALIS: [
-    'Magalis, Omiria y Alexandro',
-    'Ministra Magalis, Omiria y Alexandro',
+    'Magalis, Edith y Alexandro',
+    'Ministra Magalis, Edith y Alexandro',
   ],
-  OMIRIA: [
-    'Magalis, Omiria y Alexandro',
-    'Ministra Magalis, Omiria y Alexandro',
+  EDITH: [
+    'Magalis, Edith y Alexandro',
+    'Ministra Magalis, Edith y Alexandro',
   ],
   ALEXANDRO: [
-    'Magalis, Omiria y Alexandro',
-    'Ministra Magalis, Omiria y Alexandro',
+    'Magalis, Edith y Alexandro',
+    'Ministra Magalis, Edith y Alexandro',
   ],
   GARDYS: [
-    'Magalis, Omiria y Alexandro',
-    'Ministra Magalis, Omiria y Alexandro',
+    'Magalis, Edith y Alexandro',
+    'Ministra Magalis, Edith y Alexandro',
   ],
 
   /* ── Grupo "Lideres Yensi y Sorenis" ──

@@ -80,7 +80,7 @@ const USER_ROLE_MAP = {
   MAYERLIN:         'LECTOR',
   JONATHAN:         'LECTOR',
   MAGALIS:          'LECTOR',
-  OMIRIA:           'LECTOR',
+  EDITH:           'LECTOR',
   ALEXANDRO:        'LECTOR',
   GARDYS:           'LECTOR',
   YENSI:            'LECTOR',
@@ -108,7 +108,7 @@ const DEFAULT_ROLE = 'LECTOR';
    romper nada que dependa de él; solo se fuerza la visibilidad del
    botón al final de applyUIPermissions(). ── */
 const USUARIOS_OCULTAR_BTN_DB_DEFAULT = new Set([
-  'RENNY', 'AIRAM', 'MAYERLIN', 'JONATHAN', 'MAGALIS', 'OMIRIA', 'ALEXANDRO',
+  'RENNY', 'AIRAM', 'MAYERLIN', 'JONATHAN', 'MAGALIS', 'EDITH', 'ALEXANDRO',
   'GARDYS', 'YENSI', 'SORENNYS', 'JOSEFA', 'FRANGLYS', 'DAYANA',
   'YELSSY', 'PASTOR CARLOS D', 'PASTORA GÉNESIS', 'ANAIS', 'ATHAIS',
   'JACKSON',

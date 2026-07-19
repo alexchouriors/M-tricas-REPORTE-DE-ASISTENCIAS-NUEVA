@@ -6,7 +6,7 @@ const USUARIOS_REGISTRADOS = [
   "MAYERLIN" ,
   "JONATHAN" ,
   "MAGALIS" ,
-  "OMIRIA" ,
+  "EDITH" ,
   "ALEXANDRO" ,
   "GARDYS" ,
   "YENSI" ,
