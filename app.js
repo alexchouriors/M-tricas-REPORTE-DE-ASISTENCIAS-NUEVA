@@ -75,6 +75,21 @@ const ExcelParser = {
     return String(v).trim();
   },
 
+  /* Lee una celda directamente del worksheet por fila/columna (0-indexed),
+     prefiriendo el TEXTO TAL COMO SE VE en Excel (cell.w) sobre el valor
+     crudo (cell.v). Necesario para columnas como el teléfono: si la
+     celda es numérica, sheet_to_json({header:1}) devuelve cell.v (un
+     número JS), que puede perder ceros a la izquierda o convertirse a
+     notación exponencial con números largos. cell.w conserva el
+     formato de despliegue real de Excel. */
+  cellText(ws, rowIndex, colIndex) {
+    const addr = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+    const cell = ws[addr];
+    if (!cell) return '';
+    if (typeof cell.w === 'string' && cell.w.trim() !== '') return cell.w.trim();
+    return this.str(cell.v);
+  },
+
   /* Devuelve true si el valor de celda debe considerarse "vacío"
      (null, undefined, string vacío, 0 numérico, booleano false, etc.)
      Necesario porque SheetJS puede devolver 0 o false en celdas en blanco
@@ -101,6 +116,17 @@ const ExcelParser = {
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
     const records = [];
 
+    /* Offset real de la hoja: sheet_to_json({header:1}) genera el
+       array `rows` empezando en la PRIMERA fila del rango usado por
+       la hoja (ws['!ref']), que no siempre es la fila/columna 1 (A).
+       Si la hoja no arranca en A1, direccionar celdas "a mano" (como
+       hace cellText() para el teléfono) con el índice `i` del array
+       sin corregir apuntaría a la celda equivocada. Se calcula una
+       sola vez y se suma a cualquier lectura directa por celda. */
+    const range     = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    const rowOffset = range.s.r;
+    const colOffset = range.s.c;
+
     // Detectar título del reporte (fila 1, columna A)
     const title = this.str(rows[1]?.[0]) || this.str(rows[0]?.[0]) || '';
     DataStore.reportTitle = title;
@@ -117,6 +143,7 @@ const ExcelParser = {
       const col3 = this.str(row[3]);
       const col4 = this.str(row[4]);
       const col5 = this.str(row[5]);
+      const colTelefono = this.cellText(ws, rowOffset + i, colOffset + 6);   // N°Telefónico (columna G, verificado contra el Excel real: fila 22 = encabezados, G es la 7ª letra = índice 0-based 6)
 
       /* Detectar encabezado de grupo ministerial:
          - La fila contiene texto en col0
@@ -186,6 +213,7 @@ const ExcelParser = {
           esNuevoCelula:   esNuevoCelula,       // NUEVO en célula (Estado=NUEVO)
           esNuevoServicio: esNuevoServicio,     // NUEVO en servicio (Célula=NUEVO)
           fecha:           fecha,               // fecha de última ausencia registrada
+          telefono:        colTelefono,         // N°Telefónico (columna G)
           fuente:          'principal',
         });
       }
@@ -1251,6 +1279,24 @@ const TableEngine = {
     return `<span style="color:var(--text-dim)">${val || '—'}</span>`;
   },
 
+  /* Limpia un número telefónico y arma el enlace de WhatsApp.
+     Conserva el '+' inicial si existe; descarta cualquier otro
+     carácter no numérico (espacios, guiones, paréntesis, etc.).
+     Si no hay número registrado, devuelve un guion silenciado. */
+  waLink(telefono) {
+    const raw = (telefono || '').toString().trim();
+    if (!raw) return '<span style="color:var(--text-dim)">—</span>';
+
+    const tienePlus = raw.startsWith('+');
+    const soloDigitos = raw.replace(/[^\d]/g, '');
+    if (!soloDigitos) return '<span style="color:var(--text-dim)">—</span>';
+
+    const numeroLimpio = (tienePlus ? '+' : '') + soloDigitos;
+    return `<a href="https://wa.me/${numeroLimpio}" target="_blank" rel="noopener noreferrer" class="tel-whatsapp-link" title="Abrir chat de WhatsApp">
+      <i class="bi bi-whatsapp me-1"></i>${raw}
+    </a>`;
+  },
+
   /* Render tabla de personas */
   renderPersonas(records) {
     const tbody = document.querySelector('#tablePersonas tbody');
@@ -1261,6 +1307,7 @@ const TableEngine = {
         <td>${i+1}</td>
         <td>${r.nombre}</td>
         <td style="color:var(--text-dim);font-size:11px">${r.grupo.replace(/Ministr[ao]s?\s*/i,'').substring(0,30)}</td>
+        <td>${this.waLink(r.telefono)}</td>
         <td>${this.badge(r.celula)}</td>
         <td>${this.badge(r.servicio)}</td>
         <td style="color:var(--text-dim);font-size:11px">${r.estado || '—'}</td>
@@ -2923,7 +2970,15 @@ const ComparativaEngine = {
          pantalla ahora mismo (ya filtrados por RBAC + filtros de UI activos) */
       const activeNow    = DataStore.applyFilters(DataStore.getActiveMain());
       const kpisActual   = KPIEngine.compute(activeNow);
-      const kpisAnterior = KPIEngine.compute(historico.rawMain);
+
+      /* KPIs del reporte ANTERIOR — se le aplican los MISMOS filtros de
+         UI activos ahora mismo (grupo, estado, célula, servicio, nuevo),
+         para que la comparación sea simétrica: "[Grupo X] Actual" vs.
+         "[Grupo X] Anterior", nunca "[Grupo X] Actual" vs. "Todos los
+         grupos Anterior". Sin esto, con un grupo filtrado el histórico
+         se comparaba contra el total general sin filtrar. */
+      const historicoFiltrado = DataStore.applyFilters(historico.rawMain);
+      const kpisAnterior = KPIEngine.compute(historicoFiltrado);
 
       this._render(file.name, kpisActual, kpisAnterior);
 
@@ -3181,7 +3236,13 @@ const TrendEngine = {
       return;
     }
 
-    const kpisAnterior = KPIEngine.compute(baseline.rawMain);
+    /* Se le aplican los MISMOS filtros de UI activos ahora mismo
+       (grupo, estado, célula, servicio, nuevo) para que la comparación
+       sea simétrica: "[Grupo X] Actual" vs. "[Grupo X] Anterior".
+       Sin esto, con un grupo filtrado la línea base se comparaba contra
+       el total general sin filtrar. */
+    const baselineFiltrado = DataStore.applyFilters(baseline.rawMain);
+    const kpisAnterior = KPIEngine.compute(baselineFiltrado);
     const deltas = KPIEngine.computeDelta(kpisActual, kpisAnterior);
 
     Object.entries(KPI_DETAIL_MAP).forEach(([valueId, { metric }]) => {

@@ -4070,3 +4070,19 @@ body.desktop-mode .container-fluid {
     gap: 4px;
   }
 }
+
+/* ── Enlace de WhatsApp en la columna N°Telefónico (tabla Personas) ── */
+.tel-whatsapp-link {
+  display: inline-flex;
+  align-items: center;
+  color: #25D366;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tel-whatsapp-link:hover {
+  text-decoration: underline;
+  color: #1ebe57;
+}
