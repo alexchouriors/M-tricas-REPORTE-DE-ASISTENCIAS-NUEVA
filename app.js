@@ -228,6 +228,13 @@ const ExcelParser = {
     const records = [];
     let currentGroup = 'Excluidos';
 
+    /* Mismo criterio que parseMainSheet(): offset real de la hoja para
+       poder direccionar la celda del teléfono (columna G) de forma
+       robusta, incluso si esta hoja no arranca en A1. */
+    const range     = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    const rowOffset = range.s.r;
+    const colOffset = range.s.c;
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       if (!row) continue;
@@ -236,6 +243,7 @@ const ExcelParser = {
       const col2 = this.str(row[2]);
       const col3 = this.str(row[3]);
       const col4 = this.str(row[4]);
+      const colTelefono = this.cellText(ws, rowOffset + i, colOffset + 6); // N°Telefónico (columna G)
 
       // Detectar encabezado de grupo
       if (
@@ -261,6 +269,7 @@ const ExcelParser = {
           grupo:    currentGroup.trim(),
           esNuevo:  false,
           fecha:    this.excelDate(fechaRaw || row[5]),
+          telefono: colTelefono,          // N°Telefónico (columna G)
           fuente:   'excluidos',
         });
       }
@@ -1328,6 +1337,7 @@ const TableEngine = {
         <td>${i+1}</td>
         <td>${r.nombre}</td>
         <td style="color:var(--text-dim);font-size:11px">${r.grupo.substring(0,30)}</td>
+        <td>${this.waLink(r.telefono)}</td>
         <td>${this.badge(r.celula)}</td>
         <td>${this.badge(r.servicio)}</td>
         <td style="color:var(--text-dim);font-size:11px">${r.estado || '—'}</td>
@@ -1475,13 +1485,54 @@ const UIController = {
       e.target.value = ''; // Permite recargar el mismo archivo
     });
 
-    // Vista de Escritorio (solo visible/relevante en móviles — ver style.css).
-    // Cambio estrictamente visual: alterna la clase .desktop-mode en <body>,
-    // que fuerza el layout expandido de PC vía CSS. No toca ningún motor
-    // de datos, sesión ni notificaciones.
+    // Pantalla Completa (solo visible/relevante en móviles — ver style.css).
+    // Fullscreen API estándar de HTML5: si el documento NO está en pantalla
+    // completa, la solicita (oculta la barra de navegación del teléfono);
+    // si ya lo está, sale. No toca ningún motor de datos, sesión ni
+    // notificaciones — es un toggle puramente de presentación del navegador.
     document.getElementById('btnDesktopView')?.addEventListener('click', function () {
-      document.body.classList.toggle('desktop-mode');
-      this.classList.toggle('active');
+      const btn = this;
+      const elFullscreen =
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||   // Safari/iOS
+        document.msFullscreenElement;         // IE/Edge viejo
+
+      if (!elFullscreen) {
+        const el = document.documentElement;
+        const request =
+          el.requestFullscreen ||
+          el.webkitRequestFullscreen ||
+          el.msRequestFullscreen;
+
+        if (request) {
+          request.call(el).catch(err => {
+            console.error('[UIController] No se pudo entrar en pantalla completa:', err);
+          });
+        }
+      } else {
+        const exit =
+          document.exitFullscreen ||
+          document.webkitExitFullscreen ||
+          document.msExitFullscreen;
+
+        if (exit) {
+          exit.call(document).catch(err => {
+            console.error('[UIController] No se pudo salir de pantalla completa:', err);
+          });
+        }
+      }
+
+      btn.classList.toggle('active');
+    });
+
+    // Mantiene sincronizado el estado visual (.active) del botón si el
+    // usuario sale de pantalla completa por otra vía (ej. gesto del
+    // sistema operativo o tecla Esc), no solo con el propio clic.
+    document.addEventListener('fullscreenchange', () => {
+      const btn = document.getElementById('btnDesktopView');
+      if (!btn) return;
+      const enFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+      btn.classList.toggle('active', enFullscreen);
     });
 
     // Toggle excluidos — botón oculto visualmente en topbar (ver index.html).
@@ -1797,7 +1848,7 @@ const AbsenceEngine = {
     if (!tbody) return;
 
     if (data.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-dim);padding:32px">
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--text-dim);padding:32px">
         No hay registros con fecha de falta disponibles
       </td></tr>`;
       return;
@@ -1822,6 +1873,7 @@ const AbsenceEngine = {
         <td>${i+1}</td>
         <td style="font-weight:500">${r.nombre}</td>
         <td style="color:var(--text-dim);font-size:11px">${grpShort}</td>
+        <td>${TableEngine.waLink(r.telefono)}</td>
         <td style="font-size:12px;color:var(--text-dim)">${r.fechaFormatted}</td>
         <td>${timeHtml}</td>
         <td>$$BADGE_C$$</td>

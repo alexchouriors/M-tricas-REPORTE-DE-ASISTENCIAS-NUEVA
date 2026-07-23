@@ -1026,6 +1026,47 @@ body.kpi-modal-open { overflow: hidden; }
   }
 }
 
+/* ── Monitor de Ausencias — barra de búsqueda en móvil ──
+   Este tab tiene un elemento de más (.ausencias-legend, los puntos de
+   color) que Personas/Excluidos/Nuevos no tienen. Se acota TODO a
+   "#tabAusencias .clase" para no afectar el .table-search-bar de las
+   demás tablas, que ya funciona bien tal como está.
+   NO se toca ningún id, data-attribute ni clase con función lógica —
+   solo se reordena/envuelve visualmente lo que ya existe. */
+@media (max-width: 768px) {
+  #tabAusencias .table-search-bar {
+    flex-wrap: wrap;
+    align-items: stretch;
+    row-gap: 10px;
+  }
+
+  /* Barra de búsqueda: ancho completo, arriba de todo */
+  #tabAusencias .table-search {
+    width: 100%;
+    order: 1;
+  }
+
+  /* Píldoras de estado: su propia fila debajo de la búsqueda,
+     alineadas horizontalmente y bajando de línea si no caben —
+     el fix de .absence-badge (arriba) evita que el texto de cada
+     una se parta debajo de su punto de color. */
+  #tabAusencias .ausencias-legend {
+    order: 2;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Contador: su propia línea, ya no se desborda de la pantalla */
+  #tabAusencias .table-count {
+    order: 3;
+    width: 100%;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 480px) {
   .kpi-value { font-size: 24px; }
 }
@@ -1480,6 +1521,10 @@ body.kpi-modal-open { overflow: hidden; }
 .ausencias-legend { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .absence-badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
   padding: 3px 10px;
@@ -1880,10 +1925,11 @@ body.kpi-modal-open { overflow: hidden; }
   color: var(--gold);
 }
 
-/* Oculto por completo en resoluciones de escritorio (>992px);
-   solo tiene sentido en móviles, donde el usuario puede querer
-   forzar el layout expandido de PC. */
-@media (min-width: 992.02px) {
+/* Solo visible en móviles (max-width: 768px). En tablets y
+   escritorio queda oculto — la Fullscreen API tiene más sentido
+   como acción táctil para ocultar la barra de navegación del
+   teléfono, no como control de escritorio. */
+@media (min-width: 768.02px) {
   .btn-desktop-view {
     display: none !important;
   }

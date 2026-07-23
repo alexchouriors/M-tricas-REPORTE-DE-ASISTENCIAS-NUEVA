@@ -132,9 +132,9 @@
       <i class="bi bi-sun-fill" id="themeIcon"></i>
     </button>
 
-    <!-- Vista de Escritorio (solo visible en móviles — ver media query en style.css) -->
-    <button class="btn-desktop-view" id="btnDesktopView" title="Vista de escritorio">
-      <i class="bi bi-display" id="desktopViewIcon"></i>
+    <!-- Pantalla Completa (solo visible en móviles — ver media query en style.css) -->
+    <button class="btn-desktop-view" id="btnDesktopView" title="Pantalla Completa">
+      <i class="bi bi-arrows-fullscreen" id="desktopViewIcon"></i>
     </button>
 
     <!-- Google Sheets Sync (oculto visualmente en topbar — lógica de sincronización intacta en app.js) -->
@@ -979,7 +979,7 @@
             <i class="bi bi-person-plus-fill me-1"></i>Nuevos
           </a>
         </li>
-        <li class="nav-item">
+        <li class="nav-item d-none">
           <a class="nav-link" href="#tabHistorico" data-bs-toggle="tab">
             <i class="bi bi-clock-history me-1"></i>Histórico (Excluidos Antiguos)
           </a>
@@ -1019,7 +1019,7 @@
           <div class="table-responsive table-scroll">
             <table class="data-table" id="tableExcluidos">
               <thead>
-                <tr><th>#</th><th>Nombre</th><th>Grupo</th><th>Célula</th><th>Servicio</th><th>Estado</th><th>Fecha</th></tr>
+                <tr><th>#</th><th>Nombre</th><th>Grupo</th><th>N°Telefónico</th><th>Célula</th><th>Servicio</th><th>Estado</th><th>Fecha</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -1108,6 +1108,7 @@
                   <th>#</th>
                   <th>Nombre</th>
                   <th>Grupo</th>
+                  <th>N°Telefónico</th>
                   <th>Última Falta</th>
                   <th>Tiempo sin asistir</th>
                   <th>Célula</th>
@@ -1315,6 +1316,11 @@
 <script src="AccessManager.js"></script>
 <script src="Usuario Rules.js"></script>
 <script src="app.js"></script>
+
+<!-- Módulo independiente de UX: reconexión rápida de pantalla completa.
+     No depende de ni modifica AccessManager.js / SecurityConfig.js /
+     USUARIOS.JS / app.js. Ver comentarios dentro del archivo. -->
+<script src="FullscreenReconnect.js"></script>
 
 <!-- PWA — Registro del Service Worker
      El scope '/' permite que el SW controle toda la app aunque
