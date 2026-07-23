@@ -5,7 +5,7 @@
    Estrategia: Stale-While-Revalidate
 ================================================================ */
 
-const CACHE_NAME = 'metricas-v20';
+const CACHE_NAME = 'metricas-v21';
 
 /* Archivos pre-cacheados en la instalación.
    Las rutas son absolutas desde la raíz del sitio porque el scope es '/'. */
