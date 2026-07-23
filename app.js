@@ -61,6 +61,74 @@ const DataStore = {
       return true;
     });
   },
+
+  /* Filtra la tabla de "Excluidos" únicamente por el grupo ministerial
+     seleccionado en el <select> de filtros (this.filters.group), SIN
+     importar el rol/permiso del usuario en sesión.
+
+     Corrige el bug donde un usuario con acceso 'ALL' (RBAC) veía
+     TODOS los excluidos de TODOS los grupos aunque hubiera elegido un
+     grupo específico en el dropdown, porque renderExcluidos() se
+     pintaba directamente con DataStore.rawExcluidos "crudo" en vez de
+     respetar el valor actual del selector.
+
+     NOTA: esto es INDEPENDIENTE del filtrado por rol (AccessManager),
+     que ya recorta DataStore.rawExcluidos al cargar el archivo para
+     usuarios sin acceso 'ALL'. Este método solo añade el filtro del
+     dropdown por encima de eso — para un usuario no-admin, filtrar de
+     nuevo por su propio grupo no cambia nada (ya viene restringido),
+     pero para un admin sí respeta ahora el grupo elegido en pantalla.
+     Si el select está en "Todos los grupos" (valor vacío), devuelve
+     el arreglo sin cambios. */
+  /* Normaliza el nombre de un grupo ministerial para poder comparar
+     el mismo grupo aunque esté escrito de forma distinta entre hojas
+     del Excel (Main vs Excluidos), por ejemplo:
+       "Jonathan y Mayerling"          (hoja principal)
+       "MINISTRO Jonathan y Mayerling" (hoja Excluidos)
+     Quita prefijos de rol (Ministro/Ministra/Líder/Líderes/etc.),
+     pasa a minúsculas y colapsa espacios — NO afecta el texto que
+     se muestra en pantalla, solo se usa para comparar. */
+  _normalizeGrupoLabel(str) {
+    return (str || '')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/^(ministro|ministros|ministra|ministras|l[ií]der|l[ií]deres|pastor|pastora)\s+/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  /* Filtra la tabla de "Excluidos" únicamente por el grupo ministerial
+     seleccionado en el <select> de filtros (this.filters.group), SIN
+     importar el rol/permiso del usuario en sesión.
+
+     Corrige el bug donde un usuario con acceso 'ALL' (RBAC) veía
+     TODOS los excluidos de TODOS los grupos aunque hubiera elegido un
+     grupo específico en el dropdown, porque renderExcluidos() se
+     pintaba directamente con DataStore.rawExcluidos "crudo" en vez de
+     respetar el valor actual del selector.
+
+     Usa comparación NORMALIZADA (ver _normalizeGrupoLabel) en vez de
+     igualdad exacta de string, porque el <select> se puebla solo con
+     los encabezados de la hoja principal (rawMain), mientras que la
+     hoja "Excluidos" puede tener su propio encabezado de grupo con
+     una redacción ligeramente distinta para el mismo grupo (con o sin
+     prefijo "MINISTRO/MINISTRA/LÍDER", mayúsculas distintas, etc.).
+     Con igualdad exacta, esos registros nunca coincidían y la tabla
+     de Excluidos quedaba vacía al elegir un grupo específico.
+
+     NOTA: esto es INDEPENDIENTE del filtrado por rol (AccessManager),
+     que ya recorta DataStore.rawExcluidos al cargar el archivo para
+     usuarios sin acceso 'ALL'. Este método solo añade el filtro del
+     dropdown por encima de eso. Si el select está en "Todos los
+     grupos" (valor vacío), devuelve el arreglo sin cambios. */
+  filterExcluidosByGroup(records) {
+    const group = this.filters.group;
+    if (!group) return records; // "Todos los grupos" → sin filtrar
+
+    const targetNormalizado = this._normalizeGrupoLabel(group);
+    return records.filter(r => r && this._normalizeGrupoLabel(r.grupo) === targetNormalizado);
+  },
 };
 
 
@@ -1419,7 +1487,11 @@ const TableEngine = {
   /* Renderiza todas las tablas */
   renderAll(filteredMain) {
     this.renderPersonas(filteredMain);
-    this.renderExcluidos(DataStore.rawExcluidos);
+    /* FIX: antes se pasaba DataStore.rawExcluidos "crudo", ignorando
+       el <select> de grupo para usuarios con acceso 'ALL'. Ahora
+       siempre se respeta el valor actual del dropdown (ver
+       DataStore.filterExcluidosByGroup), sin importar el rol. */
+    this.renderExcluidos(DataStore.filterExcluidosByGroup(DataStore.rawExcluidos));
     this.renderNuevos(filteredMain);
     this.renderHistorico(DataStore.rawAntiguoEx);
   },
