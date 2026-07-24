@@ -4373,9 +4373,19 @@ const DbDefaultEngine = {
    */
   async applyStoredTrendIfAny() {
     try {
+      /* Igual que HistoryEngine.fetchFileList(): se agrega el token si
+         está disponible para usar el límite de 5000 peticiones/hora de
+         la API autenticada en vez del límite de 60/hora sin autenticar
+         (compartido por IP entre todos los que usan el dashboard) — sin
+         esto, estas lecturas podían fallar en silencio con 403 "rate
+         limit exceeded" apenas hubiera uso simultáneo, sin mostrar
+         ningún error visible al usuario. */
+      const token = AuthEngine.getToken();
+      const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
+
       const cfgRes = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
         cache: 'no-store',
-        headers: { 'Accept': 'application/vnd.github.v3.raw' },
+        headers: { 'Accept': 'application/vnd.github.v3.raw', ...authHeader },
       });
       if (!cfgRes.ok) return;
 
@@ -4388,7 +4398,7 @@ const DbDefaultEngine = {
          guarda el nombre, igual que hace con archivo_predeterminado. */
       const fileRes = await fetch(
         this.GITHUB_CONTENTS_BASE + 'REPORTES/' + encodeURIComponent(fileName),
-        { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } }
+        { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json', ...authHeader } }
       );
       if (!fileRes.ok) return;
       const fileMeta = await fileRes.json();
@@ -4406,9 +4416,16 @@ const DbDefaultEngine = {
     const label      = this._el('dbDefaultCurrentLabel');
     const trendLabel = this._el('dbDefaultCurrentTrendLabel');
     try {
+      /* Usa el token de sesión del modal si ya se ingresó, y si no,
+         cae al token persistido de AuthEngine — mismo motivo que en
+         applyStoredTrendIfAny(): evitar el límite de 60 peticiones/hora
+         sin autenticar. */
+      const token = this._sessionToken || AuthEngine.getToken();
+      const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
+
       const res = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
         cache: 'no-store',
-        headers: { 'Accept': 'application/vnd.github.v3.raw' },
+        headers: { 'Accept': 'application/vnd.github.v3.raw', ...authHeader },
       });
       if (!res.ok) {
         this._currentDefault = '';
@@ -4825,10 +4842,16 @@ const DbDefaultEngine = {
 /* ────────────────────────────────────────────────────────────
    13.6 AUTO LOAD ENGINE — Carga automática del archivo predeterminado
        Se dispara justo después de un login exitoso (ver SessionEngine).
-       Hace un fetch silencioso a config.json en la raíz del repo y,
-       si existe, descarga y carga ese archivo con el mismo flujo que
-       usa HistoryEngine._loadFile(), sin requerir token (lectura
-       pública de la API de contenidos de GitHub).
+       Hace un fetch a config.json en la raíz del repo y, si existe,
+       descarga y carga ese archivo con el mismo flujo que usa
+       HistoryEngine._loadFile(). Agrega el token de AuthEngine cuando
+       está disponible (igual que HistoryEngine.fetchFileList): la API
+       de contenidos de GitHub es de lectura pública, pero sin token
+       comparte un límite de solo 60 peticiones/hora POR IP entre todos
+       los usuarios del dashboard — con varias personas usándolo desde
+       la misma red, ese límite se agotaba fácilmente y estas lecturas
+       empezaban a fallar en silencio (403), dejando de autocargar el
+       archivo/tendencia predeterminados sin ningún error visible.
 ──────────────────────────────────────────────────────────── */
 const AutoLoadEngine = {
 
@@ -4836,10 +4859,13 @@ const AutoLoadEngine = {
 
   async loadDefaultFile() {
     try {
-      /* Lee config.json de forma silenciosa (si no existe, no hace nada) */
+      const token = AuthEngine.getToken();
+      const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      /* Lee config.json (si no existe, no hace nada) */
       const cfgRes = await fetch(this.GITHUB_CONTENTS_BASE + 'config.json', {
         cache: 'no-store',
-        headers: { 'Accept': 'application/vnd.github.v3.raw' },
+        headers: { 'Accept': 'application/vnd.github.v3.raw', ...authHeader },
       });
       if (!cfgRes.ok) return;
 
@@ -4866,10 +4892,13 @@ const AutoLoadEngine = {
    */
   async loadFileByName(fileName) {
     try {
+      const token = AuthEngine.getToken();
+      const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
+
       /* 1) Obtiene la metadata del archivo (necesitamos su download_url) */
       const fileRes = await fetch(
         this.GITHUB_CONTENTS_BASE + 'REPORTES/' + encodeURIComponent(fileName),
-        { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json' } }
+        { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.v3+json', ...authHeader } }
       );
       if (!fileRes.ok) return false;
       const fileMeta = await fileRes.json();
