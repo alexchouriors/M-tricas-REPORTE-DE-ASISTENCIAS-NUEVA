@@ -14,6 +14,14 @@
   <link rel="apple-touch-icon" href="CONFIG APP MOVIL/icon-192.png" />
   <title>Dashboard de Asistencia — Iglesia</title>
 
+  <!-- Preconnect: adelanta el handshake DNS/TLS a los orígenes externos
+       que se van a usar sí o sí (fuentes de Google y CDN de Bootstrap
+       Icons/Chart.js/SheetJS), para que cuando el navegador pida esos
+       recursos ya no tenga que pagar esa latencia de conexión. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+
   <!-- Google Fonts: Bebas Neue (display) + Outfit (body) -->
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
@@ -23,11 +31,11 @@
   <!-- Bootstrap Icons -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
 
-  <!-- Chart.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <!-- Chart.js — defer: no bloquea el parseo del HTML mientras se descarga -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
 
-  <!-- SheetJS (xlsx) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- SheetJS (xlsx) — defer: no bloquea el parseo del HTML mientras se descarga -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="style.css" />
@@ -234,6 +242,8 @@
 <!-- ============================================================
      MODAL — HISTORIAL DE REPORTES
 ============================================================ -->
+<!-- MODULARIDAD DEL DOM: este modal pesado se inyecta dinámicamente recién al hacer clic en "Historial" — ver LazyModals.js. El <template> mantiene el HTML inerte (sin costo de layout/estilo) durante la carga inicial. -->
+<template id="tpl-modalHistorial">
 <div class="modal fade" id="modalHistorial" tabindex="-1" aria-labelledby="modalHistorialLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
@@ -307,6 +317,7 @@
     </div>
   </div>
 </div>
+</template>
 
 <!-- ============================================================
      MODAL — COMPARATIVA HISTÓRICA (ComparativaEngine)
@@ -461,6 +472,8 @@
 <!-- ============================================================
      MODAL GOOGLE SHEETS
 ============================================================ -->
+<!-- MODULARIDAD DEL DOM: este modal pesado se inyecta dinámicamente recién al hacer clic para conectar Google Sheets — ver LazyModals.js. El <template> mantiene el HTML inerte (sin costo de layout/estilo) durante la carga inicial. -->
+<template id="tpl-gsheetsModal">
 <div class="modal fade" id="gsheetsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content gsheet-modal-content">
@@ -583,6 +596,7 @@
     </div>
   </div>
 </div>
+</template>
 
 <!-- ============================================================
      LOADING OVERLAY
@@ -1306,21 +1320,41 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<!-- NOTA DE CARGA DIFERIDA (defer):
+     Chart.js y SheetJS (arriba, en <head>) ahora cargan con `defer`
+     para no bloquear el parseo/pintado inicial del HTML. Los scripts
+     `defer` siempre se ejecutan EN EL ORDEN EN QUE APARECEN EN EL
+     DOCUMENTO, justo antes de DOMContentLoaded — sin importar si
+     están en <head> o al final de <body>. Por eso TODA esta cadena
+     (que depende de Chart.js/xlsx/bootstrap ya cargados) también usa
+     `defer`: así se preserva exactamente el mismo orden de ejecución
+     que existía antes (síncrono, uno detrás de otro), pero permitiendo
+     que el navegador descargue todos estos archivos EN PARALELO sin
+     bloquear el renderizado, en vez de uno a la vez y de forma
+     bloqueante como scripts normales. Ningún archivo cambió su lógica
+     interna ni el orden relativo entre ellos. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js" defer></script>
 
 <!-- App JS -->
-<script src="TelegramEngine.js"></script>
-<script src="USUARIOS.JS"></script>
+<script src="TelegramEngine.js" defer></script>
+<script src="USUARIOS.JS" defer></script>
 <!-- Control de Acceso (RBAC) — scripts clásicos, igual que USUARIOS.JS -->
-<script src="SecurityConfig.js"></script>
-<script src="AccessManager.js"></script>
-<script src="Usuario Rules.js"></script>
-<script src="app.js"></script>
+<script src="SecurityConfig.js" defer></script>
+<script src="AccessManager.js" defer></script>
+<script src="Usuario_Rules.js" defer></script>
+<script src="app.js" defer></script>
 
 <!-- Módulo independiente de UX: reconexión rápida de pantalla completa.
      No depende de ni modifica AccessManager.js / SecurityConfig.js /
      USUARIOS.JS / app.js. Ver comentarios dentro del archivo. -->
-<script src="FullscreenReconnect.js"></script>
+<script src="FullscreenReconnect.js" defer></script>
+
+<!-- Modularidad del DOM: inyecta bajo demanda los modales pesados
+     (Historial de Reportes y Google Sheets) — ver comentarios dentro
+     del archivo para el porqué del enfoque elegido. Debe ir DESPUÉS
+     de app.js (usa GSheetsEngine) pero conserva su lugar en la cadena
+     `defer`, por lo que igual se ejecuta antes de DOMContentLoaded. -->
+<script src="LazyModals.js" defer></script>
 
 <!-- PWA — Registro del Service Worker
      El scope '/' permite que el SW controle toda la app aunque

@@ -13,6 +13,94 @@
 'use strict';
 
 /* ────────────────────────────────────────────────────────────
+   0. WORKER ENGINE — Delega el parseo pesado de SheetJS
+   (XLSX.read del archivo .xlsx/.xlsm) a un Web Worker para NO
+   bloquear el hilo principal ni congelar la pantalla de carga.
+
+   El worker (excelWorker.js) hace únicamente la parte cara en CPU:
+   XLSX.read() + serializar cada hoja a un objeto plano. Devuelve un
+   objeto { SheetNames, Sheets } 100% compatible con lo que espera
+   ExcelParser.parse(workbook) (misma forma que produce XLSX.read en
+   el hilo principal), así que TODA la lógica de negocio existente
+   (ExcelParser.parseMainSheet, parseExcluidosSheet, RBAC, etc.)
+   queda intacta y sin cambios — el worker solo mueve el trabajo
+   pesado fuera del hilo principal, no cambia qué se calcula.
+
+   Si el navegador no soporta Web Workers, o el worker falla al
+   crearse/cargar SheetJS (por ejemplo, red bloqueada), se degrada
+   automáticamente a XLSX.read() síncrono en el hilo principal para
+   no romper la carga de archivos. */
+const WorkerEngine = {
+  _worker: null,
+  _seq: 0,
+  _pending: new Map(),
+  _unavailable: false, // true si el worker falló y debemos usar el fallback síncrono
+
+  _getWorker() {
+    if (this._worker || this._unavailable) return this._worker;
+    try {
+      this._worker = new Worker('excelWorker.js');
+      this._worker.onmessage = (e) => {
+        const { id, ok, sheetNames, sheets, error } = e.data || {};
+        const pending = this._pending.get(id);
+        if (!pending) return;
+        this._pending.delete(id);
+        if (ok) pending.resolve({ SheetNames: sheetNames, Sheets: sheets });
+        else pending.reject(new Error(error || 'Error desconocido en el Web Worker de Excel.'));
+      };
+      this._worker.onerror = (err) => {
+        console.error('[WorkerEngine] Error fatal en excelWorker.js, se usará el hilo principal como respaldo:', err);
+        this._unavailable = true;
+        this._pending.forEach(p => p.reject(err));
+        this._pending.clear();
+      };
+    } catch (err) {
+      console.error('[WorkerEngine] No se pudo crear el Web Worker, se usará el hilo principal como respaldo:', err);
+      this._unavailable = true;
+      this._worker = null;
+    }
+    return this._worker;
+  },
+
+  /* Fallback 100% síncrono en el hilo principal (comportamiento
+     idéntico al que tenía la app antes de esta optimización). */
+  _parseWorkbookSync(arrayBuffer) {
+    const data = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
+    return XLSX.read(data, { type: 'array', cellDates: false });
+  },
+
+  /* Punto de entrada: recibe un ArrayBuffer del .xlsx/.xlsm y
+     devuelve una Promise con el "workbook" ya parseado, procesado
+     en un Web Worker cuando es posible. */
+  async parseWorkbookAsync(arrayBuffer) {
+    if (this._unavailable || typeof Worker === 'undefined') {
+      return this._parseWorkbookSync(arrayBuffer);
+    }
+
+    try {
+      const worker = this._getWorker();
+      if (!worker) return this._parseWorkbookSync(arrayBuffer);
+
+      const id = ++this._seq;
+      // Copiamos el buffer porque se transfiere (Transferable) al worker
+      // y el original queda inutilizable en el hilo principal tras eso.
+      const bufferCopy = (arrayBuffer instanceof Uint8Array ? arrayBuffer.slice() : arrayBuffer.slice(0));
+      const raw = bufferCopy instanceof Uint8Array ? bufferCopy.buffer : bufferCopy;
+
+      const result = await new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        worker.postMessage({ id, arrayBuffer: raw }, [raw]);
+      });
+
+      return result;
+    } catch (err) {
+      console.warn('[WorkerEngine] Falló el parseo en Web Worker, reintentando en el hilo principal:', err);
+      return this._parseWorkbookSync(arrayBuffer);
+    }
+  },
+};
+
+/* ────────────────────────────────────────────────────────────
    1. DATA STORE — fuente única de verdad
 ──────────────────────────────────────────────────────────── */
 const DataStore = {
@@ -1651,10 +1739,10 @@ const UIController = {
     DataStore.fileName = file.name;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
+        const data = e.target.result; // ArrayBuffer
+        const workbook = await WorkerEngine.parseWorkbookAsync(data); // procesado en Web Worker, no bloquea la UI
         ExcelParser.parse(workbook);
         FilterEngine.populate(DataStore.rawMain);
         this.refresh();
@@ -2288,6 +2376,15 @@ const GSheetsEngine = {
     });
   },
 };
+
+/* Expone GSheetsEngine en window: LazyModals.js comprueba
+   `window.GSheetsEngine` antes de llamar a initModal() la primera
+   vez que se abre el modal de Google Sheets. Una declaración `const`
+   de nivel superior en un script clásico NO se agrega automáticamente
+   como propiedad de `window` (a diferencia de `var`/`function`), así
+   que sin esta línea esa comprobación siempre era `false` y
+   GSheetsEngine.initModal() nunca llegaba a ejecutarse. */
+window.GSheetsEngine = GSheetsEngine;
 
 
 /* ────────────────────────────────────────────────────────────
@@ -2981,7 +3078,7 @@ const HistoryEngine = {
       if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status}).`);
 
       const buffer   = await res.arrayBuffer();
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const workbook = await WorkerEngine.parseWorkbookAsync(buffer); // offload a Web Worker (no bloquea la UI)
 
       /* Guarda el nombre en DataStore y parsea con ExcelParser existente */
       DataStore.fileName = file.name;
@@ -3047,6 +3144,19 @@ const HistoryEngine = {
   },
 };
 
+/* Expone HistoryEngine en window: LazyModals.js comprueba
+   `window.HistoryEngine` como callback `onFirstOpen` al inyectar
+   #modalHistorial, para llamar a HistoryEngine.init() (que registra
+   el listener 'show.bs.modal' encargado de disparar fetchFileList()).
+   Al ser `HistoryEngine` una declaración `const` de nivel superior en
+   un script clásico, NO se agrega automáticamente como propiedad de
+   `window` (a diferencia de `var`/`function`) — por eso esa
+   comprobación siempre resultaba `false`, init() nunca se ejecutaba,
+   el listener de apertura del modal jamás quedaba enganchado y el
+   botón "Historial" se quedaba mostrando el spinner de carga para
+   siempre, sin llegar a pedir la lista de archivos a GitHub. */
+window.HistoryEngine = HistoryEngine;
+
 
 /* ────────────────────────────────────────────────────────────
    10.5 COMPARATIVA ENGINE — Comparativa Histórica de KPIs
@@ -3083,7 +3193,7 @@ const ComparativaEngine = {
       if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status}).`);
 
       const buffer   = await res.arrayBuffer();
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const workbook = await WorkerEngine.parseWorkbookAsync(buffer); // offload a Web Worker (no bloquea la UI)
 
       /* Parseo AISLADO — no toca el reporte actualmente cargado.
          Ya viene filtrado por AccessManager.applyFilter() (obligatorio
@@ -3298,7 +3408,7 @@ const TrendEngine = {
       if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status}).`);
 
       const buffer   = await res.arrayBuffer();
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const workbook = await WorkerEngine.parseWorkbookAsync(buffer); // offload a Web Worker (no bloquea la UI)
 
       /* Parseo AISLADO — no toca el reporte actualmente cargado.
          Ya viene filtrado por AccessManager.applyFilter() (obligatorio
@@ -3556,9 +3666,23 @@ const AuthEngine = {
   init() {
     this.initModal();
     this.checkExpiry();
+    this.bindExpiryLink();
+  },
 
-    /* Enlace "Renovar ahora" dentro del banner de caducidad (ahora vive en #modalHistorial) */
-    document.getElementById('btnExpiryOpenAuth')?.addEventListener('click', e => {
+  /* Enlace "Renovar ahora" dentro del banner de caducidad (vive dentro
+     de #modalHistorial, que ahora se inyecta dinámicamente al DOM —
+     ver LazyModals.js). Se llama desde init() (no-op si el modal aún
+     no fue inyectado, gracias al optional chaining) Y desde
+     LazyModals justo después de inyectar #modalHistorial, para que
+     el enlace quede funcionando la primera vez que el usuario abre
+     el Historial. Es idempotente: si ya se enlazó, no vuelve a hacerlo. */
+  _expiryLinkBound: false,
+  bindExpiryLink() {
+    if (this._expiryLinkBound) return;
+    const link = document.getElementById('btnExpiryOpenAuth');
+    if (!link) return;
+
+    link.addEventListener('click', e => {
       e.preventDefault();
 
       /* Cierra el modal de Historial antes de abrir el de configuración del token */
@@ -3572,8 +3696,17 @@ const AuthEngine = {
       this._updateModalStatus();
       this._modalRef?.show();
     });
+    this._expiryLinkBound = true;
   },
 };
+
+/* Expone AuthEngine en window: LazyModals.js comprueba
+   `window.AuthEngine` al inyectar #modalHistorial por primera vez,
+   para enlazar el link "Renovar ahora" y revisar la caducidad del
+   token (AuthEngine.bindExpiryLink / checkExpiry). Sin esta línea
+   esa comprobación también era siempre `false` por el mismo motivo
+   que HistoryEngine (ver nota arriba). */
+window.AuthEngine = AuthEngine;
 
 
 /* ────────────────────────────────────────────────────────────
@@ -3742,6 +3875,64 @@ const CloudEngine = {
        Flujo: pide nuevo nombre → pide responsable → sube a
        GitHub (REPORTES/) → notifica por Telegram.
 ──────────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   11.5 GITHUB QUEUE — Prevención de Rate Limits
+   Cola de peticiones con espaciado mínimo entre llamadas a la API
+   de GitHub. No modifica NINGUNA petición existente por sí sola:
+   los módulos que quieran protegerse de ráfagas (guardado manual,
+   futuros guardados automáticos, etc.) simplemente envuelven su
+   función de red con GitHubQueue.enqueue(fn).
+
+   Por qué hace falta: la API REST de GitHub aplica rate-limit por
+   token/IP. Si el guardado manual coincide con un ciclo de
+   auto-sync de Google Sheets (u otra llamada concurrente a GitHub),
+   varias peticiones podrían dispararse casi al mismo tiempo. Esta
+   cola las serializa (una a la vez) y garantiza un espaciado mínimo
+   entre ellas, sin bloquear la UI: el llamador sigue recibiendo una
+   Promise normal, solo que puede tardar unos milisegundos más en
+   iniciarse si hay otra petición reciente en curso. */
+const GitHubQueue = {
+  MIN_SPACING_MS: 800, // espaciado mínimo entre peticiones consecutivas
+
+  _queue: [],
+  _processing: false,
+  _lastRequestAt: 0,
+
+  /* Encola `taskFn` (una función que devuelve una Promise, típicamente
+     una llamada fetch) y devuelve una Promise que se resuelve/rechaza
+     con el resultado de esa tarea cuando finalmente se ejecuta. */
+  enqueue(taskFn) {
+    return new Promise((resolve, reject) => {
+      this._queue.push({ taskFn, resolve, reject });
+      this._processNext();
+    });
+  },
+
+  async _processNext() {
+    if (this._processing) return; // ya hay un ciclo de procesamiento activo
+    this._processing = true;
+
+    while (this._queue.length > 0) {
+      const { taskFn, resolve, reject } = this._queue.shift();
+
+      // Respeta el espaciado mínimo desde la última petición disparada
+      const wait = this.MIN_SPACING_MS - (Date.now() - this._lastRequestAt);
+      if (wait > 0) await new Promise(r => setTimeout(r, wait));
+
+      this._lastRequestAt = Date.now();
+      try {
+        const result = await taskFn();
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    }
+
+    this._processing = false;
+  },
+};
+
+
 const SaveEngine = {
 
   GITHUB_UPLOAD_BASE: 'https://api.github.com/repos/alexchouriors/M-tricas-REPORTE-DE-ASISTENCIAS-NUEVA/contents/REPORTES/',
@@ -3865,31 +4056,43 @@ const SaveEngine = {
 
     const btn = this._el('btnMenuGuardar');
     const originalHTML = btn ? btn.innerHTML : '';
+
+    /* ── FEEDBACK OPTIMISTA (Optimistic UI) ──
+       Mostramos éxito de inmediato: el usuario no espera a la ida y
+       vuelta con la API de GitHub para sentir que "ya guardó". La
+       petición real viaja en segundo plano, encolada a través de
+       GitHubQueue (ver arriba) para no chocar con otras llamadas a
+       la API de GitHub que puedan estar en curso (p. ej. un ciclo de
+       auto-sync de Google Sheets que dispare otra petición casi al
+       mismo tiempo). Si la petición real termina fallando, se revierte
+       el estado del botón y se avisa al usuario — no se le miente
+       silenciosamente sobre el resultado final. */
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Guardando…';
+      btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Guardado ✓';
     }
+    AuthEngine._toast(`"${safeName}" guardado ✓ (sincronizando con GitHub…)`, 'success');
 
-    const ok = await this._uploadToGitHub(safeName);
+    GitHubQueue.enqueue(() => this._uploadToGitHub(safeName))
+      .then((ok) => {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        if (!ok) return; // _uploadToGitHub ya mostró el detalle del error
 
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalHTML;
-    }
+        /* 4) Notificación de auditoría por Telegram */
+        AuditEngine.notify({ action: 'guardar', user, fileName: safeName });
 
-    if (!ok) return;
-
-    AuthEngine._toast(`"${safeName}" guardado correctamente ✓`, 'success');
-
-    /* 4) Notificación de auditoría por Telegram */
-    AuditEngine.notify({ action: 'guardar', user, fileName: safeName });
-
-    /* Invalida caché del Historial para reflejar el nuevo/actualizado archivo */
-    HistoryEngine._files = [];
-    const listEl = document.getElementById('listaReportesContainer');
-    if (listEl) listEl.innerHTML = '';
-    const modalHistorialEl = document.getElementById('modalHistorial');
-    if (modalHistorialEl && modalHistorialEl.classList.contains('show')) HistoryEngine.fetchFileList();
+        /* Invalida caché del Historial para reflejar el nuevo/actualizado archivo */
+        HistoryEngine._files = [];
+        const listEl = document.getElementById('listaReportesContainer');
+        if (listEl) listEl.innerHTML = '';
+        const modalHistorialEl = document.getElementById('modalHistorial');
+        if (modalHistorialEl && modalHistorialEl.classList.contains('show')) HistoryEngine.fetchFileList();
+      })
+      .catch((err) => {
+        console.error('[SaveEngine] Falló la confirmación real del guardado:', err);
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        AuthEngine._toast(`⚠️ No se pudo confirmar "${safeName}" en GitHub. Intenta de nuevo.`, 'error');
+      });
   },
 
   init() {
@@ -4676,7 +4879,7 @@ const AutoLoadEngine = {
       const bufRes = await fetch(fileMeta.download_url);
       if (!bufRes.ok) return false;
       const buffer   = await bufRes.arrayBuffer();
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const workbook = await WorkerEngine.parseWorkbookAsync(buffer); // offload a Web Worker (no bloquea la UI)
 
       DataStore.fileName = fileName;
       ExcelParser.parse(workbook);
@@ -4704,9 +4907,14 @@ document.addEventListener('DOMContentLoaded', () => {
   SessionEngine.init();
   ThemeEngine.init();
   UIController.init();
-  GSheetsEngine.initModal();
+  /* GSheetsEngine.initModal() y HistoryEngine.init() YA NO se llaman
+     aquí: ambos requieren que su modal (#gsheetsModal / #modalHistorial)
+     ya exista en el DOM, y esos modales ahora se inyectan dinámicamente
+     recién al abrirlos (ver LazyModals.js, que los invoca justo después
+     de inyectar cada template). Esto ahorra el costo de construir esos
+     dos modales pesados en la carga inicial para el 100% de las
+     sesiones que nunca los abren. */
   AbsenceEngine.initEvents();
-  HistoryEngine.init();
   AuthEngine.init();
   CloudEngine.init();
   SaveEngine.init();
