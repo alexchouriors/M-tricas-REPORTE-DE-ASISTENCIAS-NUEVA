@@ -219,6 +219,61 @@ body {
   100% { transform: translateX(200%); }
 }
 
+/* ── INITIAL LOAD OVERLAY ("experiencia personalizada") ──
+   A diferencia de .loading-overlay (fondo casi opaco, para procesar
+   archivos), este es tenue y con blur: se ve el dashboard detrás. */
+.initial-load-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200; /* por debajo de .login-overlay (3000): se revela a medida que el login se desvanece */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 17, 23, .55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 1;
+  transition: opacity .5s ease;
+}
+.initial-load-overlay.d-none { display: none !important; }
+
+/* Fade-out suave: se añade esta clase para desvanecer, y recién
+   después de que termina la transición se agrega 'd-none' desde JS */
+.initial-load-overlay.initial-load-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.initial-load-content { text-align: center; padding: 0 24px; }
+
+.initial-load-text {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: .3px;
+  color: #f1f5f9;
+}
+
+.initial-load-bar {
+  width: 220px;
+  height: 4px;
+  margin: 18px auto 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .18);
+  overflow: hidden;
+}
+
+.initial-load-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--gold);
+  border-radius: 4px;
+  transition: width .35s ease;
+}
+
+[data-theme="light"] .initial-load-overlay { background: rgba(240, 244, 248, .6); }
+[data-theme="light"] .initial-load-text { color: #1f2937; }
+[data-theme="light"] .initial-load-bar { background: rgba(15, 23, 42, .12); }
+
 /* ── EMPTY STATE ── */
 .empty-state {
   display: flex;

@@ -1874,6 +1874,70 @@ const UIController = {
 
 
 /* ────────────────────────────────────────────────────────────
+   7A. INITIAL LOAD OVERLAY — "Cargando su experiencia personalizada"
+   Overlay independiente de UIController.showLoading()/#loadingOverlay
+   (ese sigue igual, se usa para procesar archivos manuales). Este
+   módulo solo controla #initialLoadOverlay, acoplado ÚNICAMENTE al
+   flujo de auto-carga del reporte predeterminado + tendencia guardada
+   que corre justo después del login (ver SessionEngine más abajo:
+   AutoLoadEngine.loadDefaultFile().then(() => DbDefaultEngine...)).
+   No modifica la lógica de AutoLoadEngine/DbDefaultEngine: solo
+   envuelve esa misma llamada con show()/setProgress()/complete(). */
+const InitialLoadOverlay = {
+  _el: null,
+  _fillEl: null,
+  _hideTimer: null,
+
+  _ensureEl() {
+    if (!this._el) {
+      this._el = document.getElementById('initialLoadOverlay');
+      this._fillEl = document.getElementById('initialLoadFill');
+    }
+    return this._el;
+  },
+
+  /* Aparece de inmediato y arranca la barra en un pequeño % (feedback
+     instantáneo de que "ya empezó a pasar algo"), en vez de en 0. */
+  show() {
+    const el = this._ensureEl();
+    if (!el) return;
+    clearTimeout(this._hideTimer);
+    el.classList.remove('initial-load-hidden');
+    el.classList.remove('d-none');
+    this.setProgress(8);
+  },
+
+  /* Actualiza el ancho de la barra (0–100). Se llama en cada paso
+     real del proceso (reporte cargado, tendencia aplicada, etc.),
+     así que refleja avance real y no una animación falsa/indefinida. */
+  setProgress(pct) {
+    if (!this._ensureEl() || !this._fillEl) return;
+    const clamped = Math.max(0, Math.min(100, pct));
+    this._fillEl.style.width = clamped + '%';
+  },
+
+  /* Completa la barra al 100% y desvanece el overlay con fade-out
+     suave (transición CSS de opacity). SIEMPRE debe llamarse al
+     terminar el proceso, tanto en éxito como en error, para no dejar
+     al usuario con el overlay trabado en pantalla. */
+  complete() {
+    const el = this._ensureEl();
+    if (!el) return;
+    this.setProgress(100);
+
+    clearTimeout(this._hideTimer);
+    this._hideTimer = setTimeout(() => {
+      el.classList.add('initial-load-hidden'); // dispara la transición de opacity en CSS
+      setTimeout(() => {
+        el.classList.add('d-none');
+        this.setProgress(0); // listo por si se vuelve a usar (p. ej. otro login en la misma pestaña)
+      }, 500); // debe coincidir con la duración de la transición definida en style.css
+    }, 250); // breve pausa para que se alcance a ver la barra llena al 100%
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
    7B. ABSENCE ENGINE — Monitor de ausencias y alertas
    Calcula días sin asistir y clasifica por nivel de alerta
 ──────────────────────────────────────────────────────────── */
@@ -2676,16 +2740,36 @@ const SessionEngine = {
     }
 
     /* Auto-carga del archivo predeterminado (config.json → REPORTES/<archivo>),
-       fire-and-forget: no bloquea el fade-out del overlay ni el login en sí.
-       Inmediatamente DESPUÉS de que termine de cargar (encadenado con .then,
-       no en paralelo), se revisa si hay una tendencia predeterminada guardada
-       en localStorage (ver DbDefaultEngine) y se aplica automáticamente. */
+       fire-and-forget: no bloquea el fade-out del overlay de login ni el
+       login en sí. Inmediatamente DESPUÉS de que termine de cargar
+       (encadenado con .then, no en paralelo), se revisa si hay una
+       tendencia predeterminada guardada en localStorage (ver
+       DbDefaultEngine) y se aplica automáticamente.
+
+       InitialLoadOverlay envuelve esta misma llamada para mostrar la
+       pantalla "Cargando su experiencia personalizada" con una barra
+       de progreso real: 8% al empezar, 65% cuando el reporte ya
+       cargó, 100% cuando la tendencia (si había una guardada) también
+       terminó — y se desvanece con fade-out. Se usa .finally() para
+       garantizar que el overlay SIEMPRE desaparezca, incluso si algo
+       falla, sin cambiar en nada el comportamiento de
+       AutoLoadEngine/DbDefaultEngine. */
     if (typeof AutoLoadEngine !== 'undefined') {
-      AutoLoadEngine.loadDefaultFile().then(() => {
-        if (typeof DbDefaultEngine !== 'undefined') {
-          DbDefaultEngine.applyStoredTrendIfAny();
-        }
-      });
+      InitialLoadOverlay.show();
+
+      AutoLoadEngine.loadDefaultFile()
+        .then(() => {
+          InitialLoadOverlay.setProgress(65);
+          if (typeof DbDefaultEngine !== 'undefined') {
+            return DbDefaultEngine.applyStoredTrendIfAny();
+          }
+        })
+        .catch(err => {
+          console.error('[SessionEngine] Error durante la auto-carga de la experiencia personalizada:', err);
+        })
+        .finally(() => {
+          InitialLoadOverlay.complete();
+        });
     }
 
     /* Desvanece el overlay y revela el dashboard */
