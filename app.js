@@ -1547,6 +1547,7 @@ const TableEngine = {
         <td>${i+1}</td>
         <td>${r.nombre}</td>
         <td style="color:var(--text-dim);font-size:11px">${r.grupo.replace(/Ministr[ao]s?\s*/i,'').substring(0,28)}</td>
+        <td>${this.waLink(r.telefono)}</td>
         <td>${celulaDisplay}</td>
         <td>${servicioDisplay}</td>
         <td>${tipoTag}</td>
