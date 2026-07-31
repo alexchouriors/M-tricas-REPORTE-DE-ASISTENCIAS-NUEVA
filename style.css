@@ -111,6 +111,86 @@ body {
   white-space: nowrap;
 }
 
+/* ── SESSION INFO (usuario + rol + reloj) ──
+   Vive junto al logo/título en la topbar. Se revela desde
+   SessionEngine._updateSessionUI() solo después del login. */
+.session-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 16px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border);
+  line-height: 1.2;
+  min-width: 0;   /* permite truncar en vez de desbordar/empujar otros elementos */
+}
+
+.session-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  min-width: 0;
+}
+
+.session-user span#sessionUserLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.session-role-icon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+  font-style: normal; /* <i> es itálico por defecto en el navegador; aquí solo hay texto/emoji */
+}
+.session-role-icon.role-lector  { color: var(--text-dim); }
+.session-role-icon.role-editor  { color: #38bdf8; }
+.session-role-icon.role-maestro { color: var(--gold); }
+
+.session-clock {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: .3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Móvil real: el bloque pasa a ocupar su propia fila completa,
+   debajo del logo/título (que ya wrappean en .topbar-left), en vez
+   de comprimirse al lado del logo o desaparecer. */
+@media (max-width: 768px) {
+  .topbar-left { flex-wrap: wrap; row-gap: 6px; }
+  .session-info {
+    flex: 1 1 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    margin-left: 0;
+    padding-top: 8px;
+  }
+  .session-user span#sessionUserLabel { max-width: none; }
+}
+
+/* "Modo Escritorio" forzado desde un teléfono real (body.desktop-mode
+   fuerza flex-wrap:nowrap !important en todo .d-flex — ver más abajo).
+   Como la pantalla física sigue siendo angosta, este bloque se limita
+   a un ancho fijo y trunca su contenido en vez de desbordarse y
+   empujar/solapar los botones de la derecha (Cargar Excel/Tendencia/Menú). */
+body.desktop-mode .session-info {
+  max-width: 200px;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
 /* ── TOGGLE EXCLUIDOS ── */
 .excl-toggle {
   background: var(--bg-card2);
@@ -4068,6 +4148,44 @@ body.desktop-mode .container-fluid {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ── TREND VIEW BANNER (TrendViewEngine) ──
+   Mismo patrón visual que .trend-baseline-banner, pero en tono
+   dorado/ámbar (var(--gold)) para diferenciarlo claramente del
+   banner de comparativa de flechas/%: este indica que la vista
+   principal ENTERA está proyectando otro archivo, no comparando. */
+.trend-view-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 24px 14px;
+  padding: 10px 16px;
+  background: var(--gold-dim);
+  border: 1px solid rgba(240, 180, 41, .35);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  animation: trendBannerIn .25s ease;
+}
+
+.trend-view-banner i { color: var(--gold); font-size: 15px; }
+.trend-view-banner strong { color: var(--text-main); font-weight: 700; }
+
+.btn-exit-trend-view {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid rgba(240, 180, 41, .4);
+  color: var(--gold);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.btn-exit-trend-view:hover { background: var(--gold); color: #1a1400; }
 
 .btn-trend-clear {
   margin-left: auto;

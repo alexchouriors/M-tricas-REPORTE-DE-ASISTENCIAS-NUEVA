@@ -118,6 +118,12 @@ const DataStore = {
   /* Estado de la UI */
   includeExcluidos: false,
 
+  /* true = la vista principal está proyectando DataStore.comparisonBaseline
+     (ver TrendViewEngine) en vez de rawMain/rawExcluidos. NO destruye el
+     Excel original: rawMain/rawExcluidos siguen intactos, solo cambia
+     qué devuelve getActiveMain() mientras esta bandera esté activa. */
+  viewingTrend: false,
+
   /* Filtros activos */
   filters: {
     group:    '',
@@ -129,6 +135,14 @@ const DataStore = {
 
   /* Devuelve los registros activos aplicando la regla de excluidos */
   getActiveMain() {
+    /* Vista de Tendencia: reemplaza TEMPORALMENTE lo que ven
+       TableEngine/ChartEngine/KPIEngine (todos consumen esta misma
+       función), sin tocar rawMain/rawExcluidos. Se desactiva con
+       TrendViewEngine.exitTrendView(), que vuelve a mostrar esta
+       misma rama de código su comportamiento normal de siempre. */
+    if (this.viewingTrend && this.comparisonBaseline) {
+      return this.comparisonBaseline.rawMain;
+    }
     if (this.includeExcluidos) {
       // Mezcla registros principales con excluidos
       return [...this.rawMain, ...this.rawExcluidos];
@@ -2579,6 +2593,44 @@ const AuditEngine = {
        del usuario en sessionStorage y notifica por Telegram
        cada inicio/cierre de sesión.
 ──────────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────
+   9.5 CLOCK ENGINE — reloj en tiempo real de la topbar
+   Módulo pequeño e independiente: solo pinta #sessionClock cada
+   segundo. Arranca únicamente desde SessionEngine._updateSessionUI()
+   (después de un login exitoso o al restaurar sesión), nunca antes.
+──────────────────────────────────────────────────────────── */
+const ClockEngine = {
+  _intervalId: null,
+
+  _format(date) {
+    const dia = date.toLocaleDateString('es-PE', { weekday: 'long' });
+    const diaCap = dia.charAt(0).toUpperCase() + dia.slice(1);
+    const fecha = date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+    const hora = date.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    return `${diaCap}, ${fecha} · ${hora}`;
+  },
+
+  _tick() {
+    const el = document.getElementById('sessionClock');
+    if (!el) return; // el bloque puede estar oculto/ausente antes del login
+    el.textContent = this._format(new Date());
+  },
+
+  /* Idempotente: si ya hay un interval corriendo, no crea otro
+     (evita duplicar timers si se llama más de una vez por error). */
+  start() {
+    if (this._intervalId) return;
+    this._tick();
+    this._intervalId = setInterval(() => this._tick(), 1000);
+  },
+
+  stop() {
+    clearInterval(this._intervalId);
+    this._intervalId = null;
+  },
+};
+
+
 const SessionEngine = {
 
   STORAGE_KEY: 'ccrm_dashboard_user',
@@ -2884,10 +2936,33 @@ const SessionEngine = {
     window.location.reload();
   },
 
+  /* Icono por rol (LECTOR ⭐ / EDITOR ⭐⭐ / MAESTRO 👑) */
+  _ROLE_ICONS: { LECTOR: '⭐', EDITOR: '⭐⭐', MAESTRO: '👑' },
+  _ROLE_CLASS: { LECTOR: 'role-lector', EDITOR: 'role-editor', MAESTRO: 'role-maestro' },
+
   /* ── Actualiza referencias visuales del usuario activo (si existieran) ── */
   _updateSessionUI(name) {
     const label = this._el('sessionUserLabel');
     if (label) label.textContent = name;
+
+    /* Icono de rol: reutiliza UsuarioRules._resolveRole(), el mismo
+       método que ya usa app.js directamente en otro punto (ver
+       DbDefaultEngine más abajo) — no se modifica Usuario_Rules.js. */
+    const roleIcon = this._el('sessionRoleIcon');
+    if (roleIcon && window.UsuarioRules) {
+      const role = window.UsuarioRules._resolveRole(name);
+      roleIcon.textContent = this._ROLE_ICONS[role] || '';
+      roleIcon.className = `session-role-icon ${this._ROLE_CLASS[role] || ''}`;
+      roleIcon.title = `Rol: ${role}`;
+    }
+
+    /* Revela el bloque (usuario + rol + reloj) — permanece oculto
+       hasta este punto, que solo se alcanza tras un login exitoso o
+       al restaurar una sesión ya activa (ver init() más abajo). */
+    this._el('sessionInfoBlock')?.classList.remove('d-none');
+
+    /* Arranca el reloj en tiempo real de la topbar (idempotente) */
+    ClockEngine.start();
   },
 
   init() {
@@ -3608,6 +3683,110 @@ const TrendEngine = {
 
   init() {
     this._el('btnClearTrendBaseline')?.addEventListener('click', () => this.clearBaseline());
+  },
+};
+
+
+/* ────────────────────────────────────────────────────────────
+   10.5 TREND VIEW ENGINE — botón "Cargar Tendencia" de la Top Bar
+   ────────────────────────────────────────────────────────────
+   Diferencia clave con TrendEngine.setBaseline(): ese método trae un
+   archivo del HISTORIAL (descarga remota desde GitHub) y lo usa solo
+   para calcular flechas/% de comparación (DataStore.comparisonBaseline
+   + TrendEngine.render()), sin cambiar qué se ve en las tablas/gráficos
+   principales. TrendViewEngine, en cambio, deja elegir un Excel LOCAL
+   (mismo flujo de carga que "Cargar Excel": un <input type="file">) y
+   PROYECTA esos datos como si fueran el reporte activo en TableEngine,
+   ChartEngine y KPIEngine — sin tocar rawMain/rawExcluidos.
+
+   Cómo queda no-destructivo:
+   - Reutiliza ExcelParser.parseStandalone() (el mismo parseo aislado
+     y con RBAC obligatorio que ya usa TrendEngine.setBaseline()), NO
+     ExcelParser.parse() (ese sí sobrescribiría DataStore.rawMain).
+   - Guarda el resultado en DataStore.comparisonBaseline (la MISMA
+     propiedad que usa TrendEngine) y activa DataStore.viewingTrend.
+   - DataStore.getActiveMain() — el único punto que leen
+     TableEngine/ChartEngine/KPIEngine — devuelve ese dataset mientras
+     viewingTrend esté activo, y vuelve a rawMain/rawExcluidos en
+     cuanto exitTrendView() lo desactiva. Ningún motor de UI necesita
+     saber que existe una "vista de tendencia": para ellos es un
+     array de registros como cualquier otro.
+──────────────────────────────────────────────────────────── */
+const TrendViewEngine = {
+
+  _loading: false,
+
+  /* Carga un Excel local y lo proyecta en la vista principal como
+     Tendencia. No modifica DataStore.rawMain/rawExcluidos. */
+  async loadLocalFile(file) {
+    if (this._loading) return;
+    this._loading = true;
+    UIController.showLoading(true);
+
+    try {
+      const buffer   = await file.arrayBuffer();
+      const workbook = await WorkerEngine.parseWorkbookAsync(buffer); // mismo Web Worker que "Cargar Excel"
+      const parsed   = ExcelParser.parseStandalone(workbook); // parseo aislado, RBAC obligatorio y fail-closed
+
+      DataStore.comparisonBaseline = { fileName: file.name, rawMain: parsed.rawMain };
+      DataStore.viewingTrend = true;
+
+      FilterEngine.reset();     // limpia filtros de la vista anterior (grupo/estado/etc.)
+      UIController.refresh();
+      UIController.showDashboard();
+
+      const titleEl = document.getElementById('reportTitle');
+      if (titleEl) titleEl.textContent = `Tendencia — ${file.name}`;
+      this._toggleBanner(true, file.name);
+
+      AuthEngine._toast(`Viendo tendencia de "${file.name}" ✓`, 'success');
+
+      /* Notificación de auditoría por Telegram (fire-and-forget) */
+      const auditUser = AuditEngine.getUser();
+      if (auditUser) {
+        AuditEngine.notify({ action: 'cargar_tendencia_local', user: auditUser, fileName: file.name });
+      }
+    } catch (err) {
+      console.error('[TrendViewEngine] Error al cargar la tendencia:', err);
+      alert(`No se pudo cargar la tendencia:\n${err.message}`);
+    } finally {
+      this._loading = false;
+      UIController.showLoading(false);
+    }
+  },
+
+  /* Vuelve a la vista normal (el Excel general ya cargado en
+     DataStore.rawMain). No borra comparisonBaseline: si el usuario
+     tenía además una comparativa de flechas/% activa desde el
+     Historial, sigue disponible tal cual estaba. */
+  exitTrendView() {
+    DataStore.viewingTrend = false;
+    UIController.refresh();
+
+    const titleEl = document.getElementById('reportTitle');
+    if (titleEl) titleEl.textContent = DataStore.reportTitle || DataStore.fileName;
+    this._toggleBanner(false);
+
+    AuthEngine._toast('Volviste a la vista normal', 'info');
+  },
+
+  _toggleBanner(show, fileName) {
+    const banner = document.getElementById('trendViewBanner');
+    if (!banner) return;
+    banner.classList.toggle('d-none', !show);
+    if (show) {
+      const nameEl = document.getElementById('trendViewFileName');
+      if (nameEl) nameEl.textContent = fileName;
+    }
+  },
+
+  init() {
+    document.getElementById('fileInputTrend')?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) this.loadLocalFile(file);
+      e.target.value = ''; // permite volver a elegir el mismo archivo después
+    });
+    document.getElementById('btnExitTrendView')?.addEventListener('click', () => this.exitTrendView());
   },
 };
 
@@ -5034,6 +5213,7 @@ document.addEventListener('DOMContentLoaded', () => {
   DeleteEngine.init();
   DbDefaultEngine.init();
   TrendEngine.init();
+  TrendViewEngine.init();
 
   /*
     EXTENSIBILIDAD FUTURA:
