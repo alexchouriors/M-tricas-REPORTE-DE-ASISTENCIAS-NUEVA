@@ -3726,6 +3726,104 @@ body.desktop-mode .container-fluid {
 
 
 /* ────────────────────────────────────────────────────────────
+   CAMBIAR SESIÓN (NUEVO) — Botón en la barra lateral del Menú
+   Mismo esqueleto estructural que .btn-menu-logout, tono azul
+   neutro (no destructivo) para diferenciarlo de "Cerrar sesión".
+──────────────────────────────────────────────────────────── */
+.btn-menu-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(59,130,246,.12);
+  color: #93c5fd;
+  border: 1px solid rgba(59,130,246,.35);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  cursor: pointer;
+  transition: background .2s, border-color .2s, color .2s;
+  white-space: nowrap;
+}
+
+.btn-menu-switch:hover {
+  background: rgba(59,130,246,.22);
+  border-color: rgba(59,130,246,.6);
+  color: #bfdbfe;
+}
+
+[data-theme="light"] .btn-menu-switch {
+  background: rgba(37,99,235,.08);
+  color: #2563eb;
+  border-color: rgba(37,99,235,.3);
+}
+
+[data-theme="light"] .btn-menu-switch:hover {
+  background: rgba(37,99,235,.16);
+  border-color: #2563eb;
+}
+
+
+/* ────────────────────────────────────────────────────────────
+   SEPARADOR + "VERSIÓN COMPLETA" (NUEVO) — opción aislada al
+   final del menú lateral. El separador solo agrega espacio y una
+   línea sutil; el enlace reutiliza la tipografía/tamaño del resto
+   de botones del menú pero en estilo "outline" discreto, ya que
+   es una salida a un sitio externo y no una acción del dashboard.
+──────────────────────────────────────────────────────────── */
+.dash-menu-separator {
+  width: 100%;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,.08);
+  margin: 14px 0 4px;
+}
+
+[data-theme="light"] .dash-menu-separator {
+  border-top-color: rgba(15,23,42,.1);
+}
+
+.btn-menu-fullversion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed rgba(255,255,255,.25);
+  border-radius: var(--radius-sm);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .2s, border-color .2s, color .2s;
+  white-space: nowrap;
+}
+
+.btn-menu-fullversion:hover {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.4);
+  color: var(--text-main);
+}
+
+[data-theme="light"] .btn-menu-fullversion {
+  border-color: rgba(15,23,42,.2);
+  color: #64748b;
+}
+
+[data-theme="light"] .btn-menu-fullversion:hover {
+  background: rgba(15,23,42,.05);
+  border-color: rgba(15,23,42,.4);
+  color: #0f172a;
+}
+
+
+/* ────────────────────────────────────────────────────────────
    LOGIN OVERLAY — Pantalla de inicio de sesión
 ──────────────────────────────────────────────────────────── */
 .login-overlay {

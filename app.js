@@ -2636,6 +2636,16 @@ const SessionEngine = {
 
   STORAGE_KEY: 'ccrm_dashboard_user',
 
+  /* Bandera efímera (sessionStorage) que le indica a init(), justo
+     después del reload que dispara changeSession(), que debe correr
+     la MISMA autocarga de archivo/tendencia predeterminados que ya
+     corre tras un login normal (ver _confirmLogin() más abajo). Se
+     lee y se borra una sola vez en init(), así que un refresh manual
+     posterior de la página (F5) NO vuelve a disparar la autocarga —
+     se preserva exactamente el comportamiento que ya existía antes
+     de este cambio para una sesión restaurada "normal". */
+  FORCE_AUTOLOAD_KEY: 'ccrm_dashboard_force_autoload',
+
   _el(id) { return document.getElementById(id); },
 
   /** Devuelve el nombre de usuario en sesión, o null si no hay sesión activa */
@@ -2647,6 +2657,34 @@ const SessionEngine = {
   /** true si hay una sesión activa */
   isLoggedIn() {
     return this.getUser() !== null;
+  },
+
+  /**
+   * Autocarga del archivo predeterminado (config.json → REPORTES/<archivo>)
+   * y, encadenado, de la tendencia predeterminada si hubiera una guardada.
+   * Extraído tal cual del flujo de _confirmLogin() (mismo overlay, mismo
+   * orden, mismo manejo de errores) para poder reutilizarlo también desde
+   * init() cuando changeSession() lo solicita explícitamente — ver
+   * FORCE_AUTOLOAD_KEY. No cambia en nada su comportamiento original.
+   */
+  _runInitialAutoLoad() {
+    if (typeof AutoLoadEngine === 'undefined') return;
+
+    InitialLoadOverlay.show();
+
+    AutoLoadEngine.loadDefaultFile()
+      .then(() => {
+        InitialLoadOverlay.setProgress(65);
+        if (typeof DbDefaultEngine !== 'undefined') {
+          return DbDefaultEngine.applyStoredTrendIfAny();
+        }
+      })
+      .catch(err => {
+        console.error('[SessionEngine] Error durante la auto-carga de la experiencia personalizada:', err);
+      })
+      .finally(() => {
+        InitialLoadOverlay.complete();
+      });
   },
 
   /* ── Muestra el overlay de login (sin animación, estado inicial) ── */
@@ -2808,21 +2846,7 @@ const SessionEngine = {
        falla, sin cambiar en nada el comportamiento de
        AutoLoadEngine/DbDefaultEngine. */
     if (typeof AutoLoadEngine !== 'undefined') {
-      InitialLoadOverlay.show();
-
-      AutoLoadEngine.loadDefaultFile()
-        .then(() => {
-          InitialLoadOverlay.setProgress(65);
-          if (typeof DbDefaultEngine !== 'undefined') {
-            return DbDefaultEngine.applyStoredTrendIfAny();
-          }
-        })
-        .catch(err => {
-          console.error('[SessionEngine] Error durante la auto-carga de la experiencia personalizada:', err);
-        })
-        .finally(() => {
-          InitialLoadOverlay.complete();
-        });
+      this._runInitialAutoLoad();
     }
 
     /* Desvanece el overlay y revela el dashboard */
@@ -2937,6 +2961,77 @@ const SessionEngine = {
     window.location.reload();
   },
 
+  /**
+   * Cambia la sesión activa a un nuevo usuario SIN pasar por el overlay
+   * de login completo (usado por el botón "Cambiar Sesión" del menú y
+   * su modal #modalCambiarSesion — ver index.html).
+   *
+   * Reutiliza exactamente la misma validación que _confirmLogin() contra
+   * USUARIOS_REGISTRADOS (USUARIOS.JS), y notifica el cambio por Telegram
+   * como un logout del usuario anterior seguido de un login del nuevo
+   * (mismo criterio de auditoría que ya existe para login/logout).
+   *
+   * Al final, recarga la página (igual que logout()): así se garantiza
+   * que TODO el estado en memoria (DataStore, gráficos, tablas, filtros
+   * RBAC de AccessManager) se recalcule desde cero para el nuevo usuario,
+   * sin arriesgar datos filtrados a nombre del usuario anterior.
+   *
+   * @param {string} newName - Nombre de usuario al que se desea cambiar
+   * @returns {Promise<boolean>} true si el cambio fue válido (la página
+   *          está a punto de recargarse); false si hubo un error de
+   *          validación (el modal debe mostrar el mensaje y seguir abierto).
+   */
+  async changeSession(newName) {
+    const name = (newName || '').trim();
+    if (name === '') return false;
+
+    const usuarios = await this._fetchUsuariosAutorizados();
+    if (usuarios === null) return false; // Error de red/lectura — fail-closed
+
+    const nameUpper = name.toUpperCase();
+    const isAuthorized = usuarios.some(u => String(u).trim().toUpperCase() === nameUpper);
+    if (!isAuthorized) return false;
+
+    const previousName = this.getUser();
+
+    /* Notificación de auditoría: mensaje dedicado de "cambio de sesión"
+       (usuario anterior → nuevo), en vez de un logout + login separados,
+       para que quede clarísimo en el chat de Telegram que este cambio
+       vino del menú "Cambiar Sesión" y no de un cierre de sesión real
+       seguido de un login.
+
+       IMPORTANTE: a diferencia de login/logout normales, aquí SÍ hay que
+       esperar (con un límite de 1.5s, igual que logout()) antes de
+       recargar la página. Si se dispara "fire-and-forget" y de inmediato
+       se llama a window.location.reload(), el navegador cancela el
+       fetch() en pleno vuelo y el mensaje nunca llega a Telegram — por
+       eso antes no se recibía el aviso. */
+    if (typeof TelegramEngine !== 'undefined') {
+      try {
+        await Promise.race([
+          TelegramEngine.notifySessionChange(previousName, name),
+          new Promise(resolve => setTimeout(resolve, 1500)),
+        ]);
+      } catch (err) {
+        console.error('[SessionEngine] Error al notificar cambio de sesión:', err);
+      }
+    }
+
+    sessionStorage.setItem(this.STORAGE_KEY, name);
+
+    /* Marca que, tras el reload, init() debe correr la autocarga del
+       archivo/tendencia predeterminados para el NUEVO usuario — de lo
+       contrario init() solo restaura la sesión (UI/permisos) sin volver
+       a cargar ningún reporte, y el dashboard quedaría vacío. */
+    sessionStorage.setItem(this.FORCE_AUTOLOAD_KEY, '1');
+
+    /* Recarga completa: mismo criterio que logout(), para que
+       SessionEngine.init() reconstruya la sesión y UsuarioRules
+       aplique los permisos de INTERFAZ correctos para `name`. */
+    window.location.reload();
+    return true;
+  },
+
   /* Icono por rol (LECTOR ⭐ / EDITOR ⭐⭐ / MAESTRO 👑) */
   _ROLE_ICONS: { LECTOR: '⭐', EDITOR: '⭐⭐', MAESTRO: '👑' },
   _ROLE_CLASS: { LECTOR: 'role-lector', EDITOR: 'role-editor', MAESTRO: 'role-maestro' },
@@ -2974,6 +3069,17 @@ const SessionEngine = {
       /* Restaura los permisos de INTERFAZ (Usuario Rules.js) para el
          usuario ya autenticado — no afecta datos ni filtros RBAC */
       if (window.UsuarioRules) window.UsuarioRules.applyUIPermissions(this.getUser());
+
+      /* Si este reload viene de changeSession() (ver FORCE_AUTOLOAD_KEY),
+         corre la misma autocarga de archivo/tendencia predeterminados que
+         un login normal — de lo contrario el dashboard quedaría vacío
+         para el nuevo usuario. Se borra la bandera de inmediato para que
+         un F5 posterior NO vuelva a disparar la autocarga (se preserva el
+         comportamiento original de una sesión restaurada "normal"). */
+      if (sessionStorage.getItem(this.FORCE_AUTOLOAD_KEY) === '1') {
+        sessionStorage.removeItem(this.FORCE_AUTOLOAD_KEY);
+        this._runInitialAutoLoad();
+      }
     } else {
       this.showOverlay();
     }
@@ -3017,6 +3123,57 @@ const SessionEngine = {
         instance?.hide();
       }
       this.logout();
+    });
+
+    /* ── Modal "Cambiar Sesión" (NUEVO) ──
+       El botón que abre el modal (#btnAbrirCambiarSesion) ya usa
+       data-bs-toggle="modal" nativo de Bootstrap, así que no requiere
+       listener propio para abrirse. Aquí solo se engancha:
+         1) limpiar el input/error cada vez que el modal se abre,
+         2) el botón "Ingresar / Cambiar" (valida + llama a changeSession),
+         3) la tecla Enter dentro del input, como atajo del mismo botón. */
+    const modalCambiarSesionEl = this._el('modalCambiarSesion');
+    modalCambiarSesionEl?.addEventListener('show.bs.modal', () => {
+      const input = this._el('switchUserInput');
+      if (input) input.value = '';
+      this._el('switchUserError')?.classList.add('d-none');
+    });
+
+    const confirmarCambioSesion = async () => {
+      const input = this._el('switchUserInput');
+      const errEl = this._el('switchUserError');
+      const btn = this._el('btnConfirmarCambiarSesion');
+      const name = (input?.value || '').trim();
+
+      if (name === '') {
+        if (errEl) {
+          errEl.textContent = 'Por favor ingresa un nombre de usuario.';
+          errEl.classList.remove('d-none');
+        }
+        input?.focus();
+        return;
+      }
+
+      if (btn) btn.disabled = true;
+      const ok = await this.changeSession(name);
+      if (btn) btn.disabled = false;
+
+      /* Si `ok` es true, changeSession() ya disparó window.location.reload()
+         y esta línea nunca llega a ejecutarse en la práctica. Si es false,
+         el usuario no fue encontrado (o falló la verificación) y el modal
+         permanece abierto mostrando el error, igual que en el login normal. */
+      if (!ok) {
+        if (errEl) {
+          errEl.textContent = 'Usuario no encontrado. Verifica el nombre ingresado.';
+          errEl.classList.remove('d-none');
+        }
+        input?.focus();
+      }
+    };
+
+    this._el('btnConfirmarCambiarSesion')?.addEventListener('click', confirmarCambioSesion);
+    this._el('switchUserInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') confirmarCambioSesion();
     });
   },
 };

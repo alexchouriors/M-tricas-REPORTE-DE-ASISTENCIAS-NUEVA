@@ -256,11 +256,25 @@
         <span class="badge-beta-db ms-1">(Beta)</span>
       </button>
 
-      <!-- Historial (activo) -->
+      <!-- Historial (activo) — se conserva en su lugar original (el
+           pedido de reorganización no lo menciona explícitamente, así
+           que no se elimina ni se reordena para no romper su lógica) -->
       <button type="button" class="btn btn-primary" id="btnAbrirHistorial"
               data-bs-dismiss="offcanvas"
               data-bs-toggle="modal" data-bs-target="#modalHistorial">
         <i class="bi bi-clock-history me-2"></i>Historial
+      </button>
+
+      <!-- Cambiar Sesión (NUEVO) — abre #modalCambiarSesion (ver más abajo).
+           Usa una clase propia (.btn-menu-switch), estructuralmente
+           idéntica a los demás botones del menú (.btn-menu-dbdefault /
+           .btn-menu-logout) pero con tono neutro/azul: no es una acción
+           destructiva como "Cerrar sesión" (rojo), así que no comparte
+           esa semántica de color — ver estilos nuevos en style.css. -->
+      <button type="button" class="btn-menu-switch" id="btnAbrirCambiarSesion"
+              data-bs-dismiss="offcanvas"
+              data-bs-toggle="modal" data-bs-target="#modalCambiarSesion">
+        <i class="bi bi-person-arms-up me-2"></i>Cambiar Sesión
       </button>
 
       <!-- Cerrar sesión -->
@@ -268,8 +282,70 @@
         <i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión
       </button>
 
+      <!-- Separador visual + "Versión Completa" como opción aislada al final -->
+      <hr class="dash-menu-separator" />
+
+      <a href="https://alexchouriors.github.io/M-tricas-REPORTE-DE-ASISTENCIAS/"
+         target="_blank" rel="noopener noreferrer"
+         class="btn-menu-fullversion" id="btnVersionCompleta">
+        <i class="bi bi-box-arrow-up-right me-2"></i>Versión Completa
+      </a>
+
     </div>
 
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL — CAMBIAR SESIÓN (NUEVO)
+     Permite cambiar el usuario en sesión sin pasar por el overlay
+     de login completo. Reutiliza las clases .modal-content /
+     .dash-modal-header / .dash-modal-title / .dash-modal-close /
+     .dash-modal-body ya usadas por el resto de modales del proyecto
+     (ver #modalEliminar, #modalDbDefault) para mantener fidelidad
+     visual total en ambos temas (oscuro/claro). No es un modal
+     "pesado" (no hay listas ni sync), así que NO se difiere vía
+     LazyModals.js — vive en el DOM desde el inicio, igual que
+     #modalEliminar y #modalDbDefault.
+============================================================ -->
+<div class="modal fade" id="modalCambiarSesion" tabindex="-1" aria-labelledby="modalCambiarSesionLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-content">
+
+      <div class="modal-header dash-modal-header">
+        <h5 class="modal-title dash-modal-title" id="modalCambiarSesionLabel">
+          <i class="bi bi-person-arms-up me-2" style="color:#22c55e"></i>Cambiar Sesión
+        </h5>
+        <button type="button" class="dash-modal-close" data-bs-dismiss="modal" aria-label="Cerrar">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body dash-modal-body">
+
+        <div class="dash-info-box mb-3">
+          <div class="dash-info-content">
+            <div><i class="bi bi-info-circle-fill me-2"></i>Ingresa el <strong>nombre de usuario</strong> al que deseas cambiar. Se validará contra la lista de usuarios autorizados.</div>
+          </div>
+        </div>
+
+        <label class="auth-label">Nombre de usuario</label>
+        <div class="auth-input-row">
+          <input type="text" id="switchUserInput" class="auth-input"
+                 placeholder="Ej. Jonathan" autocomplete="off" maxlength="60" spellcheck="false" />
+        </div>
+
+        <div id="switchUserError" class="auth-modal-error d-none"></div>
+
+        <div class="auth-modal-actions">
+          <button class="btn-auth-clear" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn-auth-save" id="btnConfirmarCambiarSesion" style="margin-left:auto">
+            <i class="bi bi-arrow-repeat me-1"></i>Ingresar / Cambiar
+          </button>
+        </div>
+
+      </div>
+    </div>
   </div>
 </div>
 

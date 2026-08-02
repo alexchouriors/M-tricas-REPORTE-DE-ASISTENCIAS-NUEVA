@@ -261,6 +261,44 @@ const TelegramEngine = {
   },
 
   /**
+   * Notifica un CAMBIO DE SESIÓN (usuario A → usuario B) con un mensaje
+   * propio y dedicado, distinto de login/logout, para que en el chat de
+   * auditoría quede clarísimo que fue un cambio desde el menú
+   * ("Cambiar Sesión") y no un cierre + apertura de sesión independientes.
+   * Se envía únicamente al chat privado del bot.
+   *
+   * @param {string} previousUser - Usuario que estaba en sesión antes del cambio (puede ser null/'' si no había ninguno)
+   * @param {string} newUser      - Usuario al que se cambió la sesión
+   * @returns {Promise<Array>} Resultados del envío a cada chat
+   */
+  async notifySessionChange(previousUser, newUser) {
+    try {
+      const anterior = previousUser ? this._escapeHtml(previousUser) : '(sin sesión previa)';
+      const nuevo    = this._escapeHtml(newUser);
+      const now      = new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'medium' });
+
+      let msg = `🔄 <b>ALERTA DE CAMBIO DE SESIÓN</b>\n\n`;
+      msg += `👤 <b>Usuario anterior:</b> ${anterior}\n`;
+      msg += `👤 <b>Usuario nuevo:</b> ${nuevo}\n`;
+      msg += `🕒 <b>Fecha/Hora:</b> ${this._escapeHtml(now)}\n\n`;
+      msg += `🔒 <i>Notificación de cambio de sesión (menú "Cambiar Sesión") — Dashboard Asistencias</i>`;
+
+      const sends = this.CHAT_IDS.map(chatId => this._sendToChat(chatId, msg));
+      const results = await Promise.allSettled(sends);
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.value && !r.value.ok));
+      if (failed.length > 0) {
+        console.warn('[TelegramEngine] Algunas notificaciones de cambio de sesión no se enviaron correctamente:', failed);
+      }
+
+      return results;
+    } catch (err) {
+      console.error('[TelegramEngine] Error inesperado en notifySessionChange():', err);
+      return [];
+    }
+  },
+
+  /**
    * Notifica una solicitud de soporte cuando un usuario no reconocido
    * (no presente en USUARIOS.JS) intenta acceder al dashboard y
    * deja sus datos de contacto para que el administrador lo asista.
